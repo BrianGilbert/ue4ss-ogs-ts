@@ -16,6 +16,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
+# v3.0.1-era submodule URLs use SSH; rewrite to https (no agent on CI)
+$env:GIT_CONFIG_COUNT = 1
+$env:GIT_CONFIG_KEY_0 = "url.https://github.com/.insteadOf"
+$env:GIT_CONFIG_VALUE_0 = "git@github.com:"
+
 if (-not (Test-Path "$Ue4ssDir/CMakeLists.txt")) {
     git clone --quiet https://github.com/UE4SS-RE/RE-UE4SS.git $Ue4ssDir
     if ($LASTEXITCODE -ne 0) { throw "clone RE-UE4SS failed" }
