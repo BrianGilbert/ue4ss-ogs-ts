@@ -4,7 +4,10 @@ rem MSVC + Ninja, UE4SS v3.0.1 triplet config. Era-pinned toolchain:
 rem cmake 3.31 + rust 1.79 (see AGENTS.md — newer versions break the
 rem v3.0.1-era corrosion in two different ways).
 setlocal
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+rem MSVC env: use an existing dev environment if present (CI's
+rem msvc-dev-cmd), else set it up from the local VS install
+where cl >nul 2>&1
+if errorlevel 1 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
 set PATH=%PATH%;%USERPROFILE%\.cargo\bin
 set GIT_CONFIG_COUNT=1
 set GIT_CONFIG_KEY_0=url.https://github.com/.insteadOf
