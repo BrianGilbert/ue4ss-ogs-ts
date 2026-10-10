@@ -39,6 +39,8 @@ static std::chrono::steady_clock::time_point g_lastTick{};
 static std::chrono::steady_clock::time_point g_lastSample{};
 static double g_sampleInterval = 1.0 / 60.0; // motionHz; set on init from config
 static std::atomic<int> g_hookCalls{0};
+static UObject* g_cachedController = nullptr;
+static std::chrono::steady_clock::time_point g_lastControllerResolve{};
 static HMODULE g_module = nullptr;
 
 // UE FRotator::Quaternion() transcription (same as uevr-ogsa-ts)
@@ -55,29 +57,90 @@ static ogsa::telemetry::Quat RotatorToQuat(double pitchDeg, double yawDeg,
     };
 }
 
-static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
-                       ogsa::telemetry::Quat& quat,
-                       std::wstring* outPawnName = nullptr)
+// Reads controller->Pawn + K2 pose. POD-only args. Isolated so its caller
+// can guard it with SEH: during UE5 loading, transient controllers/pawns die
+// mid-load and UEPseudo has no IsValid — an AV here just invalidates the cache.
+static bool TryReadPose(UObject* controller, ogsa::telemetry::Vec3& posCm,
+                        ogsa::telemetry::Quat& quat, UObject** outPawn)
 {
-    // Take the NEWEST PlayerController with a valid Pawn: FindFirstOf returns
-    // the first controller in the object array, which is often a menu-era or
-    // superseded one (frozen pawn). The object array is append-ordered, so the
-    // last match is the most recently created — the active local controller.
-    std::vector<UObject*> controllers;
-    UObjectGlobals::FindAllOf(STR("PlayerController"), controllers);
-    AActor* actor = nullptr;
-    for (UObject* controller : controllers)
-    {
-        auto** pawn = controller->GetValuePtrByPropertyNameInChain<UObject*>(STR("Pawn"));
-        if (pawn != nullptr && *pawn != nullptr)
-            actor = static_cast<AActor*>(*pawn);
-    }
-    if (actor == nullptr) return false;
+    *outPawn = nullptr;
+    auto** pawn = controller->GetValuePtrByPropertyNameInChain<UObject*>(STR("Pawn"));
+    if (pawn == nullptr || *pawn == nullptr) return false;
+    AActor* actor = static_cast<AActor*>(*pawn);
     FVector loc = actor->K2_GetActorLocation();
     FRotator rot = actor->K2_GetActorRotation();
     posCm = { (float)loc.GetX(), (float)loc.GetY(), (float)loc.GetZ() };
     quat = RotatorToQuat(rot.GetPitch(), rot.GetYaw(), rot.GetRoll());
-    if (outPawnName != nullptr) *outPawnName = actor->GetName();
+    *outPawn = *pawn;
+    return true;
+}
+
+// SEH wrapper: must be its own function (no C++ unwinding objects) to allow
+// __try. Returns 1 on success, 0 on no-pawn, -1 on guarded access violation.
+static int GuardedReadPose(UObject* controller, ogsa::telemetry::Vec3* posCm,
+                           ogsa::telemetry::Quat* quat, UObject** outPawn)
+{
+    __try
+    {
+        return TryReadPose(controller, *posCm, *quat, outPawn) ? 1 : 0;
+    }
+    __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION
+                  ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
+    {
+        return -1;
+    }
+}
+
+static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
+                       ogsa::telemetry::Quat& quat,
+                       std::wstring* outPawnName = nullptr)
+{
+    // Controller resolution is expensive (FindAllOf walks the entire object
+    // array — 20-40ms on large UE5 games), so it is cached for 1s. A full walk
+    // at sampling cadence saturates the game thread and stalls loading on
+    // object-heavy games (observed: RoboCop UE 5.2 never finished loading).
+    // The pawn is re-read from the cached controller every sample (cheap
+    // property read — handovers picked up instantly), and the read is guarded
+    // by SEH: if the controller dies mid-load, the fault invalidates the cache
+    // and the next sample re-walks. Newest controller wins — the array is
+    // append-ordered, so the last with a valid pawn is the active local
+    // controller (FindFirstOf pins menu-era ones).
+    const auto now = std::chrono::steady_clock::now();
+    if (g_cachedController == nullptr ||
+        now - g_lastControllerResolve > std::chrono::seconds(1))
+    {
+        g_lastControllerResolve = now;
+        std::vector<UObject*> controllers;
+        UObjectGlobals::FindAllOf(STR("PlayerController"), controllers);
+        UObject* newest = nullptr;
+        for (UObject* controller : controllers)
+        {
+            auto** pawn = controller->GetValuePtrByPropertyNameInChain<UObject*>(STR("Pawn"));
+            if (pawn != nullptr && *pawn != nullptr)
+                newest = controller;
+        }
+        g_cachedController = newest;
+    }
+    if (g_cachedController == nullptr) return false;
+
+    ogsa::telemetry::Vec3 pos{};
+    ogsa::telemetry::Quat q{};
+    UObject* pawnUsed = nullptr;
+    const int rc = GuardedReadPose(g_cachedController, &pos, &q, &pawnUsed);
+    if (rc < 0)
+    {
+        static std::atomic<int> faults{0};
+        const int n = ++faults;
+        if (n == 1 || n % 100 == 0)
+            RC::Output::send<RC::LogLevel::Warning>(
+                STR("[ogsa] stale controller (AV guarded, re-walking); faults={}\n"), n);
+        g_cachedController = nullptr;
+        return false;
+    }
+    if (rc == 0 || pawnUsed == nullptr) return false;
+    posCm = pos;
+    quat = q;
+    if (outPawnName != nullptr) *outPawnName = static_cast<AActor*>(pawnUsed)->GetName();
     return true;
 }
 

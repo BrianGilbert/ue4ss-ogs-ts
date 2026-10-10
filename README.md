@@ -10,10 +10,11 @@ game. Companion plugin: [uevr-ogsa-ts](https://github.com/BrianGilbert/uevr-ogsa
 Support & discussion: [Discord](https://discord.gg/yyCp5D2Ccp)
 
 Status: **in-game validated** — live pawn telemetry observed on a real
-receiver in *Stray* (UE 4.27) and *The Gunk* (UE 4.26): position/yaw
-tracking movement, unit-norm quaternions, pawn handover across
-menu↔gameplay and level changes. Smoke suite 6/6. Built against
-UE4SS v3.0.1 — **requires the official v3.0.1 runtime** (see Install).
+receiver in *Stray* (UE 4.27), *The Gunk* (UE 4.26) and *RoboCop:
+Rogue City* (UE 5.2): position/yaw tracking movement, unit-norm
+quaternions, pawn handover across menu↔gameplay, level changes and
+UE5 load transitions. Smoke suite 6/6. Built against UE4SS v3.0.1 —
+**requires the official v3.0.1 runtime** (see Install).
 
 ## Supported engines
 
@@ -48,7 +49,10 @@ body the player controls. The camera is engine-smoothed and a rig
 following it would feed platform motion back into telemetry; the pawn
 is the rigid body whose inertial frame a motion rig reproduces.
 
-The mod takes the newest controller with a valid pawn, so menu
+The mod takes the newest controller with a valid pawn (cached for 1 s
+with an SEH guard — transient controllers die during UE5 load
+transitions, and a full object-array walk per sample saturates the
+game thread on object-heavy games and stalls loading), so menu
 spectator pawns (the engine's `DefaultPawn`) hand over to the gameplay
 pawn automatically — no restart needed across menus, level loads, or
 pawn swaps. Character pawns keep yaw on the actor rotation; pitch/roll
