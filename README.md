@@ -7,6 +7,8 @@ zero game modification, LAN-only UDP multicast. Motion platforms,
 haptic hardware, and dashboards on the local network can follow the
 game. Companion plugin: [uevr-ogsa-ts](https://github.com/BrianGilbert/uevr-ogsa-ts) (VR).
 
+Support & discussion: [Discord](https://discord.gg/yyCp5D2Ccp)
+
 Status: **smoke-verified** — standalone wire-path + UE math checks pass
 (6/6) and were observed end-to-end on a real receiver; the mod DLL
 builds against UE4SS v3.0.1. **In-game testing pending.**
