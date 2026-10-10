@@ -25,6 +25,14 @@ fork, [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS), now states
 **UE 4.7 – 5.8**, so newer/experimental UE4SS builds cover older
 engines than our pin.
 
+Validated in-game with this mod:
+
+| Game | Engine | Notes |
+|---|---|---|
+| The Gunk | UE 4.26 | pawn handover across levels |
+| Stray | UE 4.27 | menu ↔ gameplay cycles |
+| RoboCop: Rogue City | UE 5.2 | needs the SEH-guarded build (`v2026.10.10.7`+) — UE5 load transitions kill stale controllers |
+
 UE4SS prints the detected version during startup in `UE4SS.log`
 (e.g. `EngineVersion 4.11` in the PS scan section).
 
