@@ -14,6 +14,7 @@
 #endif
 #include <winsock2.h>
 #include <windows.h>
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <string>
@@ -22,7 +23,9 @@
 #include <Mod/CppUserModBase.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UObject.hpp>
+#include <Unreal/UFunction.hpp>
 #include <Unreal/AActor.hpp>
+#include <Unreal/Hooks.hpp>
 
 #include "ogsa_publisher.h"
 
@@ -33,6 +36,9 @@ using namespace RC::Unreal;
 
 static ogsa::Publisher g_publisher;
 static std::chrono::steady_clock::time_point g_lastTick{};
+static std::chrono::steady_clock::time_point g_lastSample{};
+static double g_sampleInterval = 1.0 / 60.0; // motionHz; set on init from config
+static std::atomic<int> g_hookCalls{0};
 static HMODULE g_module = nullptr;
 
 // UE FRotator::Quaternion() transcription (same as uevr-ogsa-ts)
@@ -50,35 +56,79 @@ static ogsa::telemetry::Quat RotatorToQuat(double pitchDeg, double yawDeg,
 }
 
 static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
-                       ogsa::telemetry::Quat& quat)
+                       ogsa::telemetry::Quat& quat,
+                       std::wstring* outPawnName = nullptr)
 {
-    UObject* controller = UObjectGlobals::FindFirstOf(STR("PlayerController"));
-    if (controller == nullptr) return false;
-    auto** pawn = controller->GetValuePtrByPropertyNameInChain<UObject*>(STR("Pawn"));
-    if (pawn == nullptr || *pawn == nullptr) return false;
-    AActor* actor = static_cast<AActor*>(*pawn);
+    // Take the NEWEST PlayerController with a valid Pawn: FindFirstOf returns
+    // the first controller in the object array, which is often a menu-era or
+    // superseded one (frozen pawn). The object array is append-ordered, so the
+    // last match is the most recently created — the active local controller.
+    std::vector<UObject*> controllers;
+    UObjectGlobals::FindAllOf(STR("PlayerController"), controllers);
+    AActor* actor = nullptr;
+    for (UObject* controller : controllers)
+    {
+        auto** pawn = controller->GetValuePtrByPropertyNameInChain<UObject*>(STR("Pawn"));
+        if (pawn != nullptr && *pawn != nullptr)
+            actor = static_cast<AActor*>(*pawn);
+    }
+    if (actor == nullptr) return false;
     FVector loc = actor->K2_GetActorLocation();
     FRotator rot = actor->K2_GetActorRotation();
     posCm = { (float)loc.GetX(), (float)loc.GetY(), (float)loc.GetZ() };
     quat = RotatorToQuat(rot.GetPitch(), rot.GetYaw(), rot.GetRoll());
+    if (outPawnName != nullptr) *outPawnName = actor->GetName();
     return true;
 }
 
-// Engine:Tick runs on the game thread — safe for the K2 calls above.
-static void OnEngineTickPost(UnrealScriptFunctionCallableContext&, void*)
+// Engine:Tick-class events run on the game thread — safe for the K2 calls
+// below. The hook source may fire many times per frame (ReceiveTick fires per
+// ticking actor), so sampling is cadence-gated to motionHz before any object
+// walk (FindFirstOf iterates the entire object array).
+// Cadence-gated sampling shared by all tick sources. The hook sources may
+// fire many times per frame, so this early-outs on the motionHz interval
+// before any object walk (FindAllOf iterates the entire object array).
+static void SampleAndPublish()
 {
     const auto now = std::chrono::steady_clock::now();
-    const double dt = g_lastTick.time_since_epoch().count() == 0
-        ? 1.0 / 60.0
-        : std::chrono::duration<double>(now - g_lastTick).count();
+    if (now - g_lastSample < std::chrono::duration<double>(g_sampleInterval)) return;
+    const double dt = g_lastSample.time_since_epoch().count() == 0
+        ? g_sampleInterval
+        : std::chrono::duration<double>(now - g_lastSample).count();
+    g_lastSample = now;
     g_lastTick = now;
     ogsa::telemetry::Vec3 pos;
     ogsa::telemetry::Quat quat;
-    const bool hasPose = SamplePawn(pos, quat);
+    std::wstring pawnName;
+    const bool hasPose = SamplePawn(pos, quat, &pawnName);
+    static int samples = 0;
+    if (hasPose && (++samples == 1 || samples % 600 == 0))
+        RC::Output::send<RC::LogLevel::Normal>(
+            STR("[ogsa] sample #{}: pawn '{}' at ({:.1f}, {:.1f}, {:.1f})\n"),
+            samples, pawnName, pos.X, pos.Y, pos.Z);
     g_publisher.tick(dt, hasPose, pos, quat);
 }
 
+static void OnEngineTickPost(UnrealScriptFunctionCallableContext&, void*)
+{
+    SampleAndPublish();
+}
+
 static void OnEngineTickPre(UnrealScriptFunctionCallableContext&, void*) {}
+
+// Native ProcessEvent detour — fires for every script call, game thread.
+// Used as the telemetry heartbeat: UE4SS's by-name hooks only match the
+// base-class UFunction node, and every BP-ticked actor executes its own
+// subclass node, so name-keyed hooks miss them. Cadence-gating makes this
+// cheap: one clock read per call, sampling only at motionHz.
+static void OnProcessEvent(UObject* Context, UFunction*, void*)
+{
+    (void)Context;
+    const int calls = ++g_hookCalls;
+    if (calls == 1)
+        RC::Output::send<RC::LogLevel::Normal>(STR("[ogsa] first ProcessEvent observed\n"));
+    SampleAndPublish();
+}
 
 static std::string DefaultGameName()
 {
@@ -148,18 +198,69 @@ public:
         ogsa::PublisherConfig cfg;
         cfg.gameName = _strdup(DefaultGameName().c_str());
         LoadConfig(cfg);
+        g_sampleInterval = 1.0 / (cfg.motionHz > 0.5 ? cfg.motionHz : 60.0);
         if (!g_publisher.start(cfg))
         {
             RC::Output::send<RC::LogLevel::Error>(
                 STR("[ogsa] failed to create multicast socket — mod disabled\n"));
             return;
         }
-        UObjectGlobals::RegisterHook(STR("/Script/Engine.Engine:Tick"),
-                                     OnEngineTickPre, OnEngineTickPost, nullptr);
+
+        // Per-frame hook source. By-name RegisterHook crashes when the
+        // UFunction is missing (unchecked null deref in UE4SS v3.0.1) and its
+        // name lookup mutates the engine FName table off-thread — so resolve
+        // candidates with a read-only object walk and register by pointer.
+        // /Script/Engine.Engine:Tick does NOT exist as a UFunction in UE4
+        // (it is a C++ virtual); Actor:ReceiveTick is the reflected Tick.
+        UFunction* primaryTarget = nullptr;   // native per-frame (detour path)
+        UFunction* fallbackTarget = nullptr;   // script tick (exact-name path)
+        int found = 0;
+        UObjectGlobals::ForEachUObject([&](UObject* Object, int32_t, int32_t) {
+            if (found >= 24) return LoopAction::Break;
+            auto FullName = Object->GetFullName();
+            if (FullName.find(STR("Function ")) != 0) return LoopAction::Continue;
+            auto NameNoType = FullName.substr(FullName.find(STR(" ")) + 1);
+            bool primary =
+                NameNoType == STR("/Script/Engine.Engine:Tick") ||
+                NameNoType == STR("/Script/Engine.GameEngine:Tick") ||
+                NameNoType == STR("/Script/Engine.GameViewportClient:PostRender") ||
+                NameNoType == STR("/Script/Engine.HUD:PostRender") ||
+                NameNoType == STR("/Script/Engine.HUD:DrawHUD");
+            bool fallback = NameNoType == STR("/Script/Engine.Actor:ReceiveTick");
+            if (!primary && !fallback) return LoopAction::Continue;
+            ++found;
+            RC::Output::send<RC::LogLevel::Normal>(STR("[ogsa] tick candidate: {}{}\n"),
+                NameNoType, primary ? STR("") : STR(" (script)"));
+            if (primary && (primaryTarget == nullptr ||
+                            NameNoType == STR("/Script/Engine.HUD:DrawHUD")))
+                primaryTarget = static_cast<UFunction*>(Object);
+            if (fallback && fallbackTarget == nullptr)
+                fallbackTarget = static_cast<UFunction*>(Object);
+            return LoopAction::Continue;
+        });
+        int hooks = 0;
+        if (primaryTarget)
+        {
+            UObjectGlobals::RegisterHook(primaryTarget, OnEngineTickPre, OnEngineTickPost, nullptr);
+            ++hooks;
+        }
+        if (fallbackTarget && fallbackTarget != primaryTarget)
+        {
+            UObjectGlobals::RegisterHook(fallbackTarget, OnEngineTickPre, OnEngineTickPost, nullptr);
+            ++hooks;
+        }
+        // Primary heartbeat: fires for every ProcessEvent call on the game
+        // thread. By-name hooks only match the base-class UFunction node, but
+        // every BP-ticked actor executes its own subclass node — the ProcessEvent
+        // detour sees all of them. Cadence-gated in SampleAndPublish.
+        Hook::RegisterProcessEventPreCallback(OnProcessEvent);
         RC::Output::send<RC::LogLevel::Normal>(
-            STR("[ogsa] OGSA-TS telemetry loaded: pawn tracking -> {}:{}\n"),
+            STR("[ogsa] {} tick hook(s) + ProcessEvent heartbeat active\n"), hooks);
+        RC::Output::send<RC::LogLevel::Normal>(
+            STR("[ogsa] OGSA-TS telemetry loaded: pawn tracking -> {}:{} (game={})\n"),
             std::wstring(cfg.group, cfg.group + std::strlen(cfg.group)),
-            cfg.port);
+            cfg.port,
+            std::wstring(cfg.gameName, cfg.gameName + std::strlen(cfg.gameName)));
     }
 };
 
