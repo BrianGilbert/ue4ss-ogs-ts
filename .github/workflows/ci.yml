@@ -1,0 +1,27 @@
+name: ci
+# Reconstructs the pinned UE4SS v3.0.1 dependency tree, builds the mod
+# (era-pinned cmake 3.31 + rust 1.79 — see AGENTS.md for why), runs the
+# standalone smoke test (exit-code gated).
+on: [push, pull_request]
+
+jobs:
+  build-and-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.6"
+      - uses: dtolnay/rust-toolchain@1.79
+      - name: Prepare UE4SS dep tree
+        run: ./prepare-ue4ss.ps1
+        shell: pwsh
+      - name: Build mod + smoke
+        run: ./build-mod.cmd
+        shell: cmd
+      - name: Run smoke test
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake --build build-ninja --target ogsa_smoke
+          build-ninja\ogsa_smoke.exe
+        shell: cmd
