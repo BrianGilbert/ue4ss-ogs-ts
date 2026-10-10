@@ -2,13 +2,24 @@ name: ci
 # Reconstructs the pinned UE4SS v3.0.1 dependency tree, builds the mod
 # (era-pinned cmake 3.31 + rust 1.79 — see AGENTS.md for why), runs the
 # standalone smoke test (exit-code gated).
-on: [push, pull_request]
+# Pushes to main also publish a CalVer release (vYYYY.MM.DD, UTC) with
+# the mod DLL + README; a same-day rerun appends the run number
+# (v2026.10.12.N) so tags stay unique — same handling as uevr-ogsa-ts.
+# Action pins are Node-24 majors (checkout@v7, artifact@v7/v8,
+# gh-release@v3).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   build-and-smoke:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: jwlawson/actions-setup-cmake@v2
         with:
           cmake-version: "3.31.6"
@@ -27,3 +38,51 @@ jobs:
           cmake --build build-ninja --target ogsa_smoke
           build-ninja\ogsa_smoke.exe
         shell: cmd
+      - name: Upload mod artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ogsa_telemetry-mod-dll
+          path: build-ninja/main.dll
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-and-smoke
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history + tags for the same-day tag check
+          fetch-tags: true
+      - name: Download mod artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ogsa_telemetry-mod-dll
+      - name: CalVer tag
+        id: calver
+        shell: bash
+        run: |
+          base="v$(date -u +%Y.%m.%d)"
+          tag="$base"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            tag="$base.${{ github.run_number }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Package
+        env:
+          TAG: ${{ steps.calver.outputs.tag }}
+        shell: pwsh
+        run: |
+          $name = "ue4ss_ogsa_telemetry-$($env:TAG.TrimStart('v'))-win64.zip"
+          Compress-Archive -Path main.dll, README.md -DestinationPath $name
+          "zip=$name" >> $env:GITHUB_ENV
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.calver.outputs.tag }}
+          name: ${{ steps.calver.outputs.tag }}
+          files: ${{ env.zip }}
+          generate_release_notes: true
