@@ -82,14 +82,20 @@ which every Blueprint-ticked actor bypasses).
 
 ## Install
 
-1. Pick the DLL that matches your UE4SS runtime — the two lineages have
-   incompatible `CppUserModBase` vtables, so a mod DLL only loads into
-   its own lineage:
+1. Pick the folder that matches your UE4SS runtime and copy its
+   `ogsa_telemetry` folder into `<ue4ss>/Mods/` — that's the whole
+   install (the two lineages have incompatible `CppUserModBase`
+   vtables, so a mod DLL only loads into its own lineage):
 
-   | Runtime you have | DLL from the release zip | Build track |
+   | Runtime you have | Folder in the release zip | Build track |
    |---|---|---|
-   | official [v3.0.1](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/v3.0.1) | `main-v3.0.1.dll` → rename to `main.dll` | `build-mod.cmd` |
-   | [`experimental-latest`](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest) rolling release (incl. Rai Pal's bundle) | `experimental/main.dll` | `build-experimental.cmd` |
+   | official [v3.0.1](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/v3.0.1) | `3.0.1/ogsa_telemetry/` | `build-mod.cmd` |
+   | [`experimental-latest`](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest) rolling release (incl. Rai Pal's bundle) | `experimental/ogsa_telemetry/` | `build-experimental.cmd` |
+
+   Each variant is ready to drop in: `ogsa_telemetry/dlls/main.dll`
+   plus an `enabled.txt` (UE4SS only starts mods listed in `mods.txt`
+   or carrying `enabled.txt`; without it the mod is silently never
+   loaded — no error in `UE4SS.log`).
 
    The v3.0.1 runtime needs .NET 6 for the UE4SS UI; extract its zip
    into the game's binary directory (the folder with the game's
@@ -107,11 +113,11 @@ which every Blueprint-ticked actor bypasses).
    ./build-experimental.cmd     # ABI-replica thin build (see AGENTS.md)
    # -> build-exp/main.dll
    ```
-3. Drop into `<ue4ss>/Mods/ogsa_telemetry/dlls/main.dll`
+3. If you built from source instead, drop into
+   `<ue4ss>/Mods/ogsa_telemetry/dlls/main.dll`
    (per-game: `<game>/ue4ss/Mods/...`) and create an empty
-   `<ue4ss>/Mods/ogsa_telemetry/enabled.txt` — UE4SS only starts mods
-   listed in `mods.txt` or carrying `enabled.txt` (the release zip
-   ships one).
+   `<ue4ss>/Mods/ogsa_telemetry/enabled.txt` — same layout the release
+   zip ships.
 4. Optional `ogsa_telemetry.ini` beside the DLL:
    ```ini
    group=239.255.17.17
@@ -140,12 +146,10 @@ Installing the mod through Rai Pal (bundled UE4SS):
 1. Click the game, **Install UE4SS**.
 2. Right-click the three-dots indicator to the right of **Uninstall**
    and pick **Open Mod Folder**.
-3. In the `Mods` subfolder, create `ogsa_telemetry/dlls` and drop the
-   experimental `main.dll` inside.
-4. **Enable it:** create an empty `enabled.txt` in `Mods/ogsa_telemetry/`
-   (beside `dlls/`) — UE4SS only starts mods listed in `mods.txt` or
-   carrying `enabled.txt`; without it the mod is silently never loaded
-   (no error in `UE4SS.log`).
+3. Copy the `experimental/ogsa_telemetry` folder from the release zip
+   into that `Mods` subfolder (it already carries `dlls/main.dll` and
+   the `enabled.txt` UE4SS requires — without `enabled.txt` the mod is
+   silently never loaded, no error in `UE4SS.log`).
 
 For reference, the Rai Pal gotchas observed in the field (they apply to
 any UE4SS mod under Rai Pal):

@@ -128,12 +128,16 @@ jobs:
           TAG: ${{ steps.calver.outputs.tag }}
         shell: pwsh
         run: |
-          Copy-Item dl-v301/main.dll main-v3.0.1.dll
-          New-Item -ItemType Directory -Path experimental | Out-Null
-          Copy-Item dl-exp/main.dll experimental/main.dll
-          New-Item -ItemType File -Path enabled.txt | Out-Null
+          # zip layout: <variant>/ogsa_telemetry/{enabled.txt,dlls/main.dll}
+          # + README.md at the root -- users copy the ogsa_telemetry
+          # folder of their variant straight into <ue4ss>/Mods/.
+          foreach ($v in @(@{dir='3.0.1'; src='dl-v301'}, @{dir='experimental'; src='dl-exp'})) {
+            New-Item -ItemType Directory -Force -Path "$($v.dir)/ogsa_telemetry/dlls" | Out-Null
+            Copy-Item "$($v.src)/main.dll" "$($v.dir)/ogsa_telemetry/dlls/main.dll"
+            New-Item -ItemType File -Force -Path "$($v.dir)/ogsa_telemetry/enabled.txt" | Out-Null
+          }
           $name = "ue4ss_ogsa_telemetry-$($env:TAG.TrimStart('v'))-win64.zip"
-          Compress-Archive -Path main-v3.0.1.dll, experimental, enabled.txt, README.md -DestinationPath $name
+          Compress-Archive -Path '3.0.1', experimental, README.md -DestinationPath $name
           "zip=$name" >> $env:GITHUB_ENV
       - name: Release
         uses: softprops/action-gh-release@v3
