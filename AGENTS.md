@@ -31,6 +31,15 @@
     Re-verify the ABI replica against upstream after any runtime bump:
     diff UE4SS/include/Mod/CppUserModBase.hpp (virtual order + members)
     and re-check on_cpp_mods_loaded is still exported (lineage marker).
+    check-experimental-abi.ps1 automates this in CI: it compares the
+    replica's ordered virtual sequence against upstream main's
+    CppUserModBase.hpp (gate -- add/remove/reorder fails the build with
+    a diff), and confirms every upstream virtual is exported by the
+    target runtime with matching overload counts (catches lineage
+    mismatch). The import-vs-exports link gate alone CANNOT catch
+    vtable drift -- a runtime with new/reordered slots still exports
+    every old mangled symbol, which is exactly the silent crash class
+    this check exists for.
     In-game validated: Hot Wheels Unleashed (UE 4.26) via Rai Pal's
     bundled runtime, 2026-10-12. Mod install gotcha: UE4SS starts only
     mods listed in mods.txt or carrying enabled.txt in the mod folder

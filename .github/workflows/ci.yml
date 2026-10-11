@@ -81,6 +81,9 @@ jobs:
           $missing = $ue4ssImports | Where-Object { $_ -notin $exports }
           if ($missing) { Write-Host 'MISSING FROM RUNTIME EXPORTS:'; $missing; exit 1 }
           Write-Host "all $($ue4ssImports.Count) UE4SS.dll imports present in runtime exports"
+      - name: ABI drift check (replica vs upstream + runtime)
+        shell: pwsh
+        run: ./check-experimental-abi.ps1
       - name: Upload mod artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
