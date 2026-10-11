@@ -17,8 +17,13 @@ if exist build-ninja\build.ninja goto build
 
 set "RUSTC=%USERPROFILE:\=/%/.rustup/toolchains/1.79.0-x86_64-pc-windows-msvc/bin/rustc.exe"
 set "CARGOEXE=%USERPROFILE:\=/%/.rustup/toolchains/1.79.0-x86_64-pc-windows-msvc/bin/cargo.exe"
+rem Pass UE4SS_DIR explicitly: a reused build dir keeps its cached value
+rem from the first configure, which can silently point at a different
+rem ue4ss tree than the current CMakeLists default.
+set "UE4SS_TREE=%~dp0..\ue4ss-v3.0.1"
 cmake -G Ninja -B build-ninja -S . ^
   -DCMAKE_BUILD_TYPE=Game__Shipping__Win64 ^
+  -DUE4SS_DIR="%UE4SS_TREE%" ^
   -DRust_COMPILER="%RUSTC%" ^
   -DRust_CARGO="%CARGOEXE%" ^
   -DRust_RUSTUP=Rust_RUSTUP-NOTFOUND

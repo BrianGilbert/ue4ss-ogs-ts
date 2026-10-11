@@ -5,3 +5,4 @@ build-ninja/
 .vs/
 *.user
 *.cmd.dev
+*.obj

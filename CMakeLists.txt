@@ -4,10 +4,11 @@ project(ue4ss_ogsa_ts CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# RE-UE4SS source tree with submodules initialized (the workspace keeps a
-# clone at ../ue4ss; CI clones it per the workflow). Override with -DUE4SS_DIR=
-set(UE4SS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ue4ss" CACHE PATH
-    "RE-UE4SS source tree (submodules initialized, deps/first/Unreal populated)")
+# UE4SS v3.0.1 source tree reconstructed by ./prepare-ue4ss.ps1 (own dir:
+# ../ue4ss-v3.0.1 — ../ue4ss may hold a main-lineage checkout for the
+# experimental track). Override with -DUE4SS_DIR=
+set(UE4SS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ue4ss-v3.0.1" CACHE PATH
+    "UE4SS v3.0.1 source tree (run prepare-ue4ss.ps1 first)")
 
 # Standalone smoke test — same publisher code, no UE4SS coupling
 add_executable(ogsa_smoke Test/smoke.cpp plugin/ogsa_publisher.cpp)

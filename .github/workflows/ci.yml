@@ -1,9 +1,15 @@
 name: ci
-# Reconstructs the pinned UE4SS v3.0.1 dependency tree, builds the mod
-# (era-pinned cmake 3.31 + rust 1.79 — see AGENTS.md for why), runs the
-# standalone smoke test (exit-code gated).
-# Pushes to main also publish a CalVer release (vYYYY.MM.DD, UTC) with
-# the mod DLL + README; a same-day rerun appends the run number
+# Two build tracks (same plugin source):
+#  - v3.0.1: reconstructs the pinned UE4SS v3.0.1 dependency tree, builds
+#    against it (era-pinned cmake 3.31 + rust 1.79 — see AGENTS.md), pairs
+#    with the official v3.0.1 runtime.
+#  - experimental: thin build against the ABI replica + vendored headers,
+#    import lib generated from the official 'experimental-latest' rolling
+#    release UE4SS.dll, then every import is verified against that runtime's
+#    real export table. Pairs with experimental runtimes (Rai Pal's bundle).
+# Both run the standalone smoke test path (exit-code gated).
+# Pushes to main also publish a CalVer release (vYYYY.MM.DD, UTC) with both
+# mod DLLs + README; a same-day rerun appends the run number
 # (v2026.10.12.N) so tags stay unique — same handling as uevr-ogsa-ts.
 # Action pins are Node-24 majors (checkout@v7, artifact@v7/v8,
 # gh-release@v3).
@@ -42,13 +48,50 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
         with:
-          name: ogsa_telemetry-mod-dll
+          name: ogsa_telemetry-mod-dll-v301
           path: build-ninja/main.dll
+          if-no-files-found: error
+
+  build-experimental:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Import lib from experimental runtime
+        run: ./prepare-experimental.ps1
+        shell: pwsh
+      - name: Build experimental mod
+        run: ./build-experimental.cmd
+        shell: cmd
+      - name: Verify imports against runtime exports
+        shell: pwsh
+        run: |
+          $dumpbin = (Get-Command dumpbin.exe).Source
+          $imports = & $dumpbin /IMPORTS build-exp/main.dll
+          $ue4ssImports = @(); $inBlock = $false
+          foreach ($line in $imports) {
+            if ($line -match '^\s+(\S+\.dll)$') { $inBlock = ($Matches[1] -ieq 'UE4SS.dll'); continue }
+            if ($inBlock -and $line -match '^\s+[0-9A-F]+\s+([?_][^\s]+)') { $ue4ssImports += $Matches[1] }
+          }
+          $exports = Get-Content build-exp/UE4SS.exports.txt | ForEach-Object {
+            if ($_ -match '^\s*\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)$') { $Matches[1] }
+          }
+          $missing = $ue4ssImports | Where-Object { $_ -notin $exports }
+          if ($missing) { Write-Host 'MISSING FROM RUNTIME EXPORTS:'; $missing; exit 1 }
+          Write-Host "all $($ue4ssImports.Count) UE4SS.dll imports present in runtime exports"
+      - name: Upload mod artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ogsa_telemetry-mod-dll-experimental
+          path: build-exp/main.dll
           if-no-files-found: error
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build-and-smoke
+    needs: [build-and-smoke, build-experimental]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -57,10 +100,16 @@ jobs:
         with:
           fetch-depth: 0 # full history + tags for the same-day tag check
           fetch-tags: true
-      - name: Download mod artifact
+      - name: Download v3.0.1 mod artifact
         uses: actions/download-artifact@v8
         with:
-          name: ogsa_telemetry-mod-dll
+          name: ogsa_telemetry-mod-dll-v301
+          path: dl-v301
+      - name: Download experimental mod artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ogsa_telemetry-mod-dll-experimental
+          path: dl-exp
       - name: CalVer tag
         id: calver
         shell: bash
@@ -76,8 +125,12 @@ jobs:
           TAG: ${{ steps.calver.outputs.tag }}
         shell: pwsh
         run: |
+          Copy-Item dl-v301/main.dll main-v3.0.1.dll
+          New-Item -ItemType Directory -Path experimental | Out-Null
+          Copy-Item dl-exp/main.dll experimental/main.dll
+          New-Item -ItemType File -Path enabled.txt | Out-Null
           $name = "ue4ss_ogsa_telemetry-$($env:TAG.TrimStart('v'))-win64.zip"
-          Compress-Archive -Path main.dll, README.md -DestinationPath $name
+          Compress-Archive -Path main-v3.0.1.dll, experimental, enabled.txt, README.md -DestinationPath $name
           "zip=$name" >> $env:GITHUB_ENV
       - name: Release
         uses: softprops/action-gh-release@v3

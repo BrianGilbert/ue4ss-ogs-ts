@@ -6,9 +6,11 @@
 #     d09b7218 (verified by SHA).
 #   * two floating-source incompatibilities are patched (patches/).
 # Run from the repo root:
-#   ./prepare-ue4ss.ps1 [-Ue4ssDir ..\ue4ss]
+#   ./prepare-ue4ss.ps1 [-Ue4ssDir ..\ue4ss-v3.0.1]
+# (own dir so it never clobbers a main-lineage checkout at ../ue4ss, which the
+# experimental track vendors headers from — see prepare-experimental.ps1)
 param(
-    [string]$Ue4ssDir = "../ue4ss",
+    [string]$Ue4ssDir = "../ue4ss-v3.0.1",
     [string]$Tag = "v3.0.1",
     [string]$UnrealSha = "d09b7218bfe7392adeffb500fdeee0b42ca1cd27",
     [string]$UnrealRepo = "https://github.com/ashandarei/uepseudo-goa.git"
