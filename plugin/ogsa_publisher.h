@@ -1,17 +1,18 @@
-// ogsa_publisher.h — engine-agnostic OGSA-TS publisher for the UEVR plugin.
+// ogsa_publisher.h — engine-agnostic OGSA-TS publisher for the UE4SS mod.
 //
 // Owns the winsock multicast socket and the cadence logic (discovery every
 // N seconds, motion at the configured rate), and serializes with the
 // vendored, corpus-locked ogsa-ts-unreal core (OgsaTelemetry/). Input pose
 // is UE world space (cm, LH X-fwd Y-right Z-up); conversion to the OGSA-TS
 // frame happens here via ToStandard. Shared with Test/smoke.cpp so the
-// wire path is testable without UEVR.
+// wire path is testable without UE4SS.
 #pragma once
 #ifndef NOMINMAX
 #define NOMINMAX // windows.h min/max macros break UE4SS's Unreal STL use
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <string>
 #include <vector>
 #include <cstdint>
 #include "OgsaTelemetry/OgsaTelemetryWire.h"
@@ -40,6 +41,14 @@ public:
     void stop();
     bool started() const { return socket_ != INVALID_SOCKET; }
 
+    /// Updates the tracked object's discovery typeLabel (e.g. the pawn
+    /// class name an injected mod is following). The object NAME stays
+    /// stable — receivers match motion to discovery by it — while the
+    /// label shows what is actually being tracked; a changed label forces
+    /// the next discovery re-send per the standard's re-send-on-change
+    /// rule. Input is stripped by StripInstanceSuffix first.
+    void set_type_label(const char* label);
+
     /// Advances the clock by dt seconds and, if a pose is available,
     /// publishes at the configured cadence. posCm is UE world centimetres;
     /// quat is UE world orientation (x,y,z,w).
@@ -62,8 +71,15 @@ private:
     struct sockaddr_in dst_ {};
     telemetry::WireBuilder wire_;
     PublisherConfig cfg_;
+    std::string typeLabel_;
     double clock_ = 0.0, lastDiscovery_ = -1e18, lastMotion_ = -1e18;
     int64_t sessionUs_ = 0;
 };
+
+/// Strips a UE instance-number suffix ("BP_Foo_C_3" -> "BP_Foo_C",
+/// "Sportscar_12" -> "Sportscar") so runtime-tracked class names stay
+/// stable across respawn/GC; returns the input unchanged when the last
+/// underscore segment is not purely numeric.
+std::string StripInstanceSuffix(const std::string& name);
 
 } // namespace ogsa

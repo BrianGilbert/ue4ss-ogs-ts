@@ -16,11 +16,11 @@ if errorlevel 1 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC
 cd /d "%~dp0"
 
 if not exist vendor\exp\include\Unreal\UObject.hpp (
-    echo [exp] vendor\exp is missing UEPseudo headers — see prepare-experimental.ps1 -VendorHeaders
+    echo [exp] vendor\exp is missing UEPseudo headers - see prepare-experimental.ps1 -VendorHeaders
     exit /b 1
 )
 if not exist build-exp\UE4SS.lib (
-    echo [exp] build-exp\UE4SS.lib missing — run: powershell -File prepare-experimental.ps1
+    echo [exp] build-exp\UE4SS.lib missing - run: powershell -File prepare-experimental.ps1
     exit /b 1
 )
 
@@ -38,4 +38,4 @@ cl /nologo /std:c++20 /EHsc /O2 /MD /LD ^
   /link build-exp\UE4SS.lib ws2_32.lib
 if errorlevel 1 exit /b 1
 del /q build-exp\*.obj 2>nul
-echo [exp] build-exp\main.dll — pair with an experimental UE4SS runtime ^(not v3.0.1^)
+echo [exp] build-exp\main.dll - pair with an experimental UE4SS runtime ^(not v3.0.1^)

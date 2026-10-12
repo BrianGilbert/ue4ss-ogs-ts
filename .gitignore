@@ -6,3 +6,5 @@ build-ninja/
 *.user
 *.cmd.dev
 *.obj
+staging/
+dist/

@@ -125,8 +125,12 @@ which every Blueprint-ticked actor bypasses).
    motionHz=60
    objectName=player
    objectType=humanoid    ; humanoid|vehicle|aircraft|watercraft|spacecraft|camera
-   gameName=              ; default: the game's exe name
+   gameName=              ; default: the game's exe name, pack/build tokens
+                          ; stripped ("Game-Win64-Shipping" -> "Game")
    ```
+   The tracked pawn's class name is surfaced automatically as the object's
+   `typeLabel` in discovery (e.g. "BP_PlayerCharacter_C"), re-sent when
+   possession changes; `objectName` stays the stable matching key.
    (UE4/UE5 FVector layout is handled automatically by UE4SS's SDK.)
 5. Pair with a receiver — e.g. ogsa-ts-dotnet's
    `dotnet run --project src/TelemetryReceive`.
@@ -143,13 +147,27 @@ beside the game exe wins over anything else.
 
 Installing the mod through Rai Pal (bundled UE4SS):
 
-1. Click the game, **Install UE4SS**.
-2. Right-click the three-dots indicator to the right of **Uninstall**
-   and pick **Open Mod Folder**.
-3. Copy the `experimental/ogsa_telemetry` folder from the release zip
-   into that `Mods` subfolder (it already carries `dlls/main.dll` and
-   the `enabled.txt` UE4SS requires — without `enabled.txt` the mod is
-   silently never loaded, no error in `UE4SS.log`).
+Rai Pal's UE4SS layout (verified in the field, 2026-10-12): the game's
+binary directory gets a `dwmapi.dll` proxy plus an `override.txt`
+pointing at Rai Pal's data copy
+(`<appdata>/raicuparta/rai-pal/data/installed-mods/<game-id>/ue4ss/`),
+which holds the real `UE4SS.dll` and — because UE4SS's default mods
+folder sits beside its DLL — **the "Open Mod Folder" location IS the
+live mod folder**: drop `experimental/ogsa_telemetry` from the release
+zip there and it loads (it carries `dlls/main.dll` + the `enabled.txt`
+UE4SS requires — without `enabled.txt` the mod is silently never
+loaded, no error in `UE4SS.log`).
+
+**Placement gotcha (observed on The Gunk):** Rai Pal can put the
+`dwmapi.dll` + `override.txt` pair in `Engine/Binaries/Win64/` instead
+of the game-exe directory — the Windows DLL search order never reaches
+it there, so UE4SS silently never loads (no `UE4SS.log` anywhere). Fix:
+move the pair into the same folder as the game's `*-Win64-Shipping.exe`.
+If an older manual UE4SS install also lives in the game dir (its own
+`UE4SS.dll` + `Mods/`), remove it — two installs shadow each other and
+the stale one wins, which looks exactly like "my mod updates never take
+effect". The mod's `ogsa_telemetry_debug.log` (rewritten beside its DLL
+every launch) tells you which copy actually ran.
 
 For reference, the Rai Pal gotchas observed in the field (they apply to
 any UE4SS mod under Rai Pal):

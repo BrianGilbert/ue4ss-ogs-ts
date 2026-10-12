@@ -16,6 +16,8 @@
 #include <windows.h>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
+#include <cstdarg>
 #include <fstream>
 #include <string>
 
@@ -60,6 +62,50 @@ static ogsa::telemetry::Quat RotatorToQuat(double pitchDeg, double yawDeg,
         (float)(cr * sp * sy - sr * cp * cy),  (float)(-cr * sp * cy - sr * cp * sy),
         (float)(cr * cp * sy - sr * sp * cy),  (float)(cr * cp * cy + sr * sp * sy),
     };
+}
+
+static std::wstring g_lastPawnName; // raw pawn name last fed to set_type_label
+
+// ---- debug trace (ogsa_telemetry_debug.log beside the DLL) ----
+// Rai Pal's UE4SS ships with both consoles off and no file logging, so the
+// mod writes its own small trace (rewritten each launch): config as loaded,
+// the first pawn name the typeLabel path sees, and every label change.
+static void DebugLog(const char* fmt, ...)
+{
+    static FILE* f = nullptr;
+    if (!f)
+    {
+        char path[MAX_PATH]{};
+        GetModuleFileNameA(g_module, path, MAX_PATH);
+        std::string p(path);
+        const auto slash = p.find_last_of("\\/");
+        f = fopen((slash == std::string::npos
+            ? std::string("ogsa_telemetry_debug.log")
+            : p.substr(0, slash + 1) + "ogsa_telemetry_debug.log").c_str(), "w");
+        if (!f) return;
+    }
+    va_list ap; va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fflush(f);
+}
+
+// POD-buffer copy of the pawn's name, SEH-guarded like the pose read: the
+// wstring lives in the callee frame (the __try wrapper must stay
+// unwinding-free for MSVC). Returns chars written, 0 = empty name,
+// -1 = access violation or C++ exception (missing member offset) guarded.
+static bool TryWritePawnName(UObject* pawn, wchar_t* buf, int bufChars)
+{
+    const std::wstring n = static_cast<AActor*>(pawn)->GetName();
+    int i = 0;
+    for (wchar_t c : n) { if (i >= bufChars - 1) break; buf[i++] = c; }
+    buf[i] = 0;
+    return true;
+}
+static int GuardedWritePawnName(UObject* pawn, wchar_t* buf, int bufChars)
+{
+    __try { TryWritePawnName(pawn, buf, bufChars); return (int)wcslen(buf); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { buf[0] = 0; return -1; }
 }
 
 // Reads controller->Pawn + K2 pose. POD-only args. Isolated so its caller
@@ -145,7 +191,27 @@ static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
     if (rc == 0 || pawnUsed == nullptr) return false;
     posCm = pos;
     quat = q;
-    if (outPawnName != nullptr) *outPawnName = static_cast<AActor*>(pawnUsed)->GetName();
+    if (outPawnName != nullptr)
+    {
+        wchar_t buf[160];
+        const int n = GuardedWritePawnName(pawnUsed, buf, 160);
+        static bool logged = false; // first-read diagnosis for the debug log
+        if (!logged)
+        {
+            logged = true;
+            if (n > 0)
+            {
+                char utf8[512]{};
+                WideCharToMultiByte(CP_UTF8, 0, buf, n, utf8, sizeof utf8,
+                                    nullptr, nullptr);
+                DebugLog("first pawn name: '%s' (%d chars)\n", utf8, n);
+            }
+            else DebugLog("pawn name read: %s\n",
+                          n == 0 ? "EMPTY string from UObject::GetName"
+                                 : "guarded (AV or missing member offset)");
+        }
+        *outPawnName = n > 0 ? buf : L"";
+    }
     return true;
 }
 
@@ -169,6 +235,23 @@ static void SampleAndPublish()
     ogsa::telemetry::Quat quat;
     std::wstring pawnName;
     const bool hasPose = SamplePawn(pos, quat, &pawnName);
+    if (hasPose && pawnName != g_lastPawnName)
+    {
+        // surface what we're tracking as the discovery typeLabel
+        // ("BP_Foo_C_3" -> "BP_Foo_C"); the object name stays "player"
+        g_lastPawnName = pawnName;
+        char utf8[512]{};
+        const int m = WideCharToMultiByte(CP_UTF8, 0, pawnName.c_str(),
+                                          (int)pawnName.size(), utf8, sizeof utf8,
+                                          nullptr, nullptr);
+        if (m > 0)
+        {
+            g_publisher.set_type_label(utf8);
+            DebugLog("typeLabel set: '%s'\n", utf8);
+        }
+        else DebugLog("pawn name -> utf8 conversion failed (len %u)\n",
+                      (unsigned)pawnName.size());
+    }
     static int samples = 0;
     if (hasPose && (++samples == 1 || samples % 600 == 0))
         RC::Output::send<RC::LogLevel::Normal>(
@@ -205,7 +288,21 @@ static std::string DefaultGameName()
     std::string p(path);
     const auto slash = p.find_last_of("\\/");
     const auto dot = p.find_last_of('.');
-    return p.substr(slash + 1, dot - slash - 1);
+    std::string name = p.substr(slash + 1, dot - slash - 1);
+    // "Game-Win64-Shipping" -> "Game": receivers display gameName and key
+    // per-game state on it, so strip the pack/build tokens (INI overrides)
+    for (;;)
+    {
+        const auto dash = name.find_last_of('-');
+        if (dash == std::string::npos) break;
+        const std::string tok = name.substr(dash + 1);
+        const bool known = tok == "Shipping" || tok == "Test"
+                        || tok == "DebugGame" || tok == "Win64"
+                        || tok == "WinGDK" || tok == "Win32";
+        if (!known) break;
+        name.resize(dash);
+    }
+    return name;
 }
 
 static uint16_t ObjectTypeFromName(const std::string& s)
@@ -266,6 +363,8 @@ public:
         ogsa::PublisherConfig cfg;
         cfg.gameName = _strdup(DefaultGameName().c_str());
         LoadConfig(cfg);
+        DebugLog("ogsa_telemetry mod start: game='%s' object='%s' -> %s:%d\n",
+                 cfg.gameName, cfg.objectName, cfg.group, cfg.port);
         g_sampleInterval = 1.0 / (cfg.motionHz > 0.5 ? cfg.motionHz : 60.0);
         if (!g_publisher.start(cfg))
         {
