@@ -13,7 +13,8 @@ Status: **in-game validated** — live pawn telemetry observed on a real
 receiver in *Stray* (UE 4.27), *The Gunk* (UE 4.26) and *RoboCop:
 Rogue City* (UE 5.2): position/yaw tracking movement, unit-norm
 quaternions, pawn handover across menu↔gameplay, level changes and
-UE5 load transitions. Smoke suite 6/6. Two build tracks, each pairing
+UE5 load transitions. Smoke suite 14/14 (wire + derived body dynamics).
+Two build tracks, each pairing
 with a different UE4SS runtime lineage (see Install):
 
 - **v3.0.1 track** — built against the official **v3.0.1** runtime
@@ -125,13 +126,23 @@ which every Blueprint-ticked actor bypasses).
    motionHz=60
    objectName=player
    objectType=humanoid    ; humanoid|vehicle|aircraft|watercraft|spacecraft|camera
-   gameName=              ; default: the game's exe name, pack/build tokens
-                          ; stripped ("Game-Win64-Shipping" -> "Game")
+   dynamics=on           ; on (default) | off — bodyDynamics variant in motion frames
+   gameName=             ; default: the game's exe name, pack/build tokens
+                         ; stripped ("Game-Win64-Shipping" -> "Game")
    ```
    The tracked pawn's class name is surfaced automatically as the object's
    `typeLabel` in discovery (e.g. "BP_PlayerCharacter_C"), re-sent when
    possession changes; `objectName` stays the stable matching key.
    (UE4/UE5 FVector layout is handled automatically by UE4SS's SDK.)
+
+   Motion frames carry pose **plus the `bodyDynamics` variant** — specific
+   force (m/s², accelerometer-style: `f = a − g`, +1 g up at rest) and
+   angular velocity (rad/s, C-4 body-frame sense), derived per engine tick
+   from the pawn pose (position-delta velocity; UEPseudo exposes no typed
+   GetVelocity). Acceleration is low-pass filtered (τ = 0.1 s), teleports
+   reset the estimator, and rates come from quaternion deltas — no Euler
+   representation-flip artifacts (see GameConn `docs/cueing.md` for the
+   receiver-side value).
 5. Pair with a receiver — e.g. ogsa-ts-dotnet's
    `dotnet run --project src/TelemetryReceive`.
 

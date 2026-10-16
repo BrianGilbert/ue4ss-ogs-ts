@@ -338,6 +338,8 @@ static void LoadConfig(ogsa::PublisherConfig& cfg)
         else if (key == "objectName") cfg.objectName = _strdup(val.c_str());
         else if (key == "objectType") cfg.objectType = ObjectTypeFromName(val);
         else if (key == "gameName") cfg.gameName = _strdup(val.c_str());
+        else if (key == "dynamics")
+            cfg.sendDynamics = (val != "off" && val != "0");
         // (engine= ABI flag from uevr-ogsa-ts is not needed here: UE4SS
         //  adapts the UE4/UE5 FVector layout itself)
     }
