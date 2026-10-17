@@ -22,6 +22,25 @@ permissions:
   contents: read
 
 jobs:
+  conformance:
+    # Standalone serializer guard (no UE4SS needed): rebuilds the
+    # standard's seven corpus vectors via the vendored core and
+    # byte-compares, plus frame-conversion + deriver checks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: Open-Game-Standards-Alliance/OGSA-Telemetry-Standard
+          path: OGSA-Telemetry-Standard
+      - name: Configure + build
+        run: |
+          cmake -S Test -B Test/build
+          cmake --build Test/build
+      - name: Run conformance binary
+        run: Test/build/ogsa_conformance
+              "$GITHUB_WORKSPACE/OGSA-Telemetry-Standard/conformance"
+
   build-and-smoke:
     runs-on: windows-latest
     steps:
