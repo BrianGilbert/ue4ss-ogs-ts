@@ -211,7 +211,7 @@ TelemetryReceive beside it to watch `synthetic_pawn` on the wire.
 | `plugin/Mod.cpp` | UE4SS glue (pawn lookup, K2 calls, ProcessEvent heartbeat, INI) |
 | `plugin/experimental/CppUserModBase.ABI.hpp` | ABI-exact replica of the experimental-lineage mod base (vtable + layout pin) |
 | `plugin/ogsa_publisher.*` | engine-agnostic publisher (shared with uevr-ogsa-ts) |
-| `OgsaTelemetry/` | vendored corpus-locked serializer (sync-core.ps1 from ogsa-ts-unreal) |
+| `OgsaTelemetry/` | vendored canonical-encoding serializer (sync-core.ps1 from ogsa-ts-unreal), corpus-locked |
 | `vendor/exp/` | experimental-track headers: public main-lineage deps + recoverable UEPseudo snapshot + fmt 11.2.0 |
 | `prepare-experimental.ps1` + `build-experimental.cmd` | experimental track: import lib from the real runtime's exports, thin build |
 | `patches/` + `prepare-ue4ss.ps1` | pinned UE4SS v3.0.1 dep tree reconstruction |
