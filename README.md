@@ -13,7 +13,7 @@ Status: **in-game validated** — live pawn telemetry observed on a real
 receiver in *Stray* (UE 4.27), *The Gunk* (UE 4.26) and *RoboCop:
 Rogue City* (UE 5.2): position/yaw tracking movement, unit-norm
 quaternions, pawn handover across menu↔gameplay, level changes and
-UE5 load transitions. Smoke suite 14/14 (wire + derived body dynamics).
+UE5 load transitions. Smoke suite 16/16 (wire + derived body dynamics + pause).
 Two build tracks, each pairing
 with a different UE4SS runtime lineage (see Install):
 
@@ -125,8 +125,9 @@ which every Blueprint-ticked actor bypasses).
    port=40123
    motionHz=60
    objectName=player
-   objectType=humanoid    ; humanoid|vehicle|aircraft|watercraft|spacecraft|camera
+   objectType=humanoid    ; humanoid|vehicle|aircraft|watercraft|spacecraft|camera|creature|other
    dynamics=on           ; on (default) | off — bodyDynamics variant in motion frames
+   pause=on              ; on (default) | off — report pauses on session.paused (C-11)
    gameName=             ; default: the game's exe name, pack/build tokens
                          ; stripped ("Game-Win64-Shipping" -> "Game")
    ```

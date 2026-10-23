@@ -31,6 +31,7 @@
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UObject.hpp>
 #include <Unreal/UFunction.hpp>
+#include <Unreal/FProperty.hpp>
 #include <Unreal/AActor.hpp>
 #include <Unreal/Hooks.hpp>
 
@@ -47,6 +48,9 @@ static std::chrono::steady_clock::time_point g_lastSample{};
 static double g_sampleInterval = 1.0 / 60.0; // motionHz; set on init from config
 static std::atomic<int> g_hookCalls{0};
 static UObject* g_cachedController = nullptr;
+static bool g_detectPause = true; // INI pause=off disables (C-11)
+static UObject* g_pauseFnOwner = nullptr; // controller g_isPausedFn was resolved on
+static UFunction* g_isPausedFn = nullptr;
 static std::chrono::steady_clock::time_point g_lastControllerResolve{};
 static HMODULE g_module = nullptr;
 
@@ -138,6 +142,43 @@ static int GuardedReadPose(UObject* controller, ogsa::telemetry::Vec3* posCm,
     __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION
                   ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
     {
+        return -1;
+    }
+}
+
+// Pause (standard CONVENTIONS C-11): APlayerController::IsPaused is
+// BlueprintCallable and reports the world's pause state, so it is called
+// by reflection on the cached controller. It takes no inputs — the return
+// value is the only parameter. POD-only args so the caller can SEH-guard
+// it like the pose read.
+static bool TryIsPaused(UObject* controller, bool* outPaused)
+{
+    if (controller != g_pauseFnOwner)
+    {
+        g_pauseFnOwner = controller;
+        g_isPausedFn = controller->GetFunctionByNameInChain(STR("IsPaused"));
+    }
+    if (g_isPausedFn == nullptr) return false;
+    FProperty* ret = g_isPausedFn->GetReturnProperty();
+    if (ret == nullptr) return false;
+    alignas(16) uint8_t parms[64]{};
+    controller->ProcessEvent(g_isPausedFn, parms);
+    *outPaused = *ret->ContainerPtrToValuePtr<bool>(parms);
+    return true;
+}
+
+// 1 paused, 0 running, -1 unknown (no function, or a guarded fault —
+// reported as running, so a broken lookup never pins the rig at rest)
+static int GuardedIsPaused(UObject* controller)
+{
+    __try
+    {
+        bool paused = false;
+        return TryIsPaused(controller, &paused) ? (paused ? 1 : 0) : -1;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        g_pauseFnOwner = nullptr; // re-resolve next time
         return -1;
     }
 }
@@ -235,6 +276,17 @@ static void SampleAndPublish()
     ogsa::telemetry::Quat quat;
     std::wstring pawnName;
     const bool hasPose = SamplePawn(pos, quat, &pawnName);
+    if (g_detectPause && hasPose && g_cachedController != nullptr)
+    {
+        // this ProcessEvent re-enters OnProcessEvent, which the cadence
+        // gate above turns away (g_lastSample is already now)
+        const int paused = GuardedIsPaused(g_cachedController);
+        if ((paused == 1) != g_publisher.paused())
+        {
+            g_publisher.set_paused(paused == 1);
+            DebugLog("pause: %s\n", paused == 1 ? "paused" : "running");
+        }
+    }
     if (hasPose && pawnName != g_lastPawnName)
     {
         // surface what we're tracking as the discovery typeLabel
@@ -307,12 +359,18 @@ static std::string DefaultGameName()
 
 static uint16_t ObjectTypeFromName(const std::string& s)
 {
-    if (s == "vehicle") return 0;
-    if (s == "aircraft") return 1;
-    if (s == "watercraft") return 2;
-    if (s == "spacecraft") return 3;
-    if (s == "camera") return 5;
-    return 4; // humanoid
+    // ObjectType ordinals since corpus v3: `other` holds 0 so the
+    // catch-all never interleaves with real classes — 0 other, 1 vehicle,
+    // 2 aircraft, 3 watercraft, 4 spacecraft, 5 humanoid, 6 camera,
+    // 7 creature (same table as uevr-ogsa-ts)
+    if (s == "vehicle") return 1;
+    if (s == "aircraft") return 2;
+    if (s == "watercraft") return 3;
+    if (s == "spacecraft") return 4;
+    if (s == "creature") return 7;
+    if (s == "other") return 0;
+    if (s == "camera") return 6;
+    return 5; // humanoid
 }
 
 static void LoadConfig(ogsa::PublisherConfig& cfg)
@@ -340,6 +398,8 @@ static void LoadConfig(ogsa::PublisherConfig& cfg)
         else if (key == "gameName") cfg.gameName = _strdup(val.c_str());
         else if (key == "dynamics")
             cfg.sendDynamics = (val != "off" && val != "0");
+        else if (key == "pause")
+            g_detectPause = (val != "off" && val != "0");
         // (engine= ABI flag from uevr-ogsa-ts is not needed here: UE4SS
         //  adapts the UE4/UE5 FVector layout itself)
     }
