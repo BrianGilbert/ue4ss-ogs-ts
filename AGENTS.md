@@ -1,8 +1,8 @@
-# ue4ss-ogsa-ts — working conventions
+# ue4ss-ogs-ts — working conventions
 
 - Motion object is the LOCAL PAWN (PlayerController.Pawn), not the
   camera — KB projects/uevr C-20261010-MBP-08; the engine-agnostic
-  publisher + smoke test are shared with uevr-ogsa-ts (BrianGilbert).
+  publisher + smoke test are shared with uevr-ogs-ts (BrianGilbert).
 - TWO build tracks from the same plugin sources, pairing with different
   UE4SS runtime lineages (CppUserModBase vtables are incompatible
   across them — a DLL only loads into its own lineage):
@@ -43,7 +43,7 @@
     In-game validated: Hot Wheels Unleashed (UE 4.26) via Rai Pal's
     bundled runtime, 2026-10-12. Mod install gotcha: UE4SS starts only
     mods listed in mods.txt or carrying enabled.txt in the mod folder
-    (Mods/ogsa_telemetry/enabled.txt) — without it the mod is silently
+    (Mods/ogs_telemetry/enabled.txt) — without it the mod is silently
     never scanned (no error in UE4SS.log).
   - ../ue4ss holds a main-lineage checkout (branch main; the
     'experimental-latest' TAG is a stale Dec-2024 snapshot whose vtable
@@ -55,4 +55,4 @@
 - Test/smoke.cpp is standalone (no UE4SS) and must stay passing; the
   plugin DLL itself needs a game to fully verify.
 - Product docs describe current state only; history lives in the
-  Open-Game-Standards-Alliance knowledge base.
+  Open-Game-Standards knowledge base.

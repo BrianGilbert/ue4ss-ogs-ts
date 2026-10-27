@@ -26,14 +26,14 @@ if not exist build-exp\UE4SS.lib (
 
 if not exist build-exp mkdir build-exp
 cl /nologo /std:c++20 /EHsc /O2 /MD /LD ^
-  /DOGSA_EXP_ABI /DFMT_HEADER_ONLY=1 /utf-8 /DUE_BUILD_SHIPPING=1 /DUE_GAME /DPLATFORM_WINDOWS=1 /DPLATFORM_MICROSOFT=1 /DOVERRIDE_PLATFORM_HEADER_NAME=Windows /DUBT_COMPILED_PLATFORM=Win64 /DUNICODE /D_UNICODE ^
+  /DOGS_EXP_ABI /DFMT_HEADER_ONLY=1 /utf-8 /DUE_BUILD_SHIPPING=1 /DUE_GAME /DPLATFORM_WINDOWS=1 /DPLATFORM_MICROSOFT=1 /DOVERRIDE_PLATFORM_HEADER_NAME=Windows /DUBT_COMPILED_PLATFORM=Win64 /DUNICODE /D_UNICODE ^
   /I"%~dp0plugin" /I"%~dp0." ^
   /I"%~dp0vendor\exp\include" ^
   /I"%~dp0vendor\exp\include_gen" ^
   /I"%~dp0vendor\exp\include\Unreal" ^
   /I"%~dp0vendor\exp\include\Unreal\Core" ^
   /I"%~dp0vendor\exp\fmt" ^
-  plugin\Mod.cpp plugin\ogsa_publisher.cpp ^
+  plugin\Mod.cpp plugin\ogs_publisher.cpp ^
   /Fe:build-exp\main.dll ^
   /link build-exp\UE4SS.lib ws2_32.lib
 if errorlevel 1 exit /b 1

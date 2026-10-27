@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ue4ss_ogsa_ts CXX)
+project(ue4ss_ogs_ts CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,11 +11,11 @@ set(UE4SS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../ue4ss-v3.0.1" CACHE PATH
     "UE4SS v3.0.1 source tree (run prepare-ue4ss.ps1 first)")
 
 # Standalone smoke test — same publisher code, no UE4SS coupling
-add_executable(ogsa_smoke Test/smoke.cpp plugin/ogsa_publisher.cpp)
-target_include_directories(ogsa_smoke PRIVATE vendor plugin .)
-target_link_libraries(ogsa_smoke ws2_32)
+add_executable(ogs_smoke Test/smoke.cpp plugin/ogs_publisher.cpp)
+target_include_directories(ogs_smoke PRIVATE vendor plugin .)
+target_link_libraries(ogs_smoke ws2_32)
 
-# The mod DLL (installed as Mods/ogsa_telemetry/dlls/main.dll)
+# The mod DLL (installed as Mods/ogs_telemetry/dlls/main.dll)
 include(FetchContent)
 
 # UE4SS v3.0.1 pins ImGuiColorTextEdit to the floating 'master' branch, which
@@ -32,7 +32,7 @@ add_subdirectory(${UE4SS_DIR} ue4ss-build)
 # raw Windows.h so the min/max macros don't break std::min/std::max.
 target_compile_options(Unreal PRIVATE "/FI${CMAKE_SOURCE_DIR}/patches/winforce.h")
 
-add_library(ogsa_telemetry SHARED plugin/Mod.cpp plugin/ogsa_publisher.cpp)
-set_target_properties(ogsa_telemetry PROPERTIES OUTPUT_NAME "main")
-target_include_directories(ogsa_telemetry PRIVATE plugin .)
-target_link_libraries(ogsa_telemetry PRIVATE UE4SS ws2_32)
+add_library(ogs_telemetry SHARED plugin/Mod.cpp plugin/ogs_publisher.cpp)
+set_target_properties(ogs_telemetry PROPERTIES OUTPUT_NAME "main")
+target_include_directories(ogs_telemetry PRIVATE plugin .)
+target_link_libraries(ogs_telemetry PRIVATE UE4SS ws2_32)

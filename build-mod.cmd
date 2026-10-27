@@ -32,5 +32,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File strip-defaultlib.ps1
 if errorlevel 1 exit /b 1
 
 :build
-cmake --build build-ninja --target ogsa_telemetry
+cmake --build build-ninja --target ogs_telemetry
 if errorlevel 1 exit /b 1

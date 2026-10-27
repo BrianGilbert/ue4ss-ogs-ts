@@ -48,7 +48,7 @@ if (-not $Ue4ssDll) {
     $asset = $rel.assets | Where-Object { $_.name -match '^UE4SS_v\d' } | Select-Object -First 1
     if (-not $asset) { throw "no UE4SS_*.zip asset on the experimental-latest release" }
     Write-Host "[exp] release asset: $($asset.name)"
-    $tmp = Join-Path $env:TEMP "ogsa-exp-runtime"
+    $tmp = Join-Path $env:TEMP "ogs-exp-runtime"
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Path $tmp | Out-Null
     $zip = Join-Path $tmp $asset.name

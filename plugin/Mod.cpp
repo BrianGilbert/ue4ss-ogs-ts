@@ -1,14 +1,14 @@
-// Mod.cpp — OGSA-TS telemetry for UE4SS (flatscreen UE4/UE5 games).
+// Mod.cpp — OGS-TS telemetry for UE4SS (flatscreen UE4/UE5 games).
 //
 // Publishes the LOCAL PAWN's world pose (the controlled body — not the
-// camera; KB ruling C-20261010-MBP-08) as OGSA-TS motion telemetry over
+// camera; KB ruling C-20261010-MBP-08) as OGS-TS motion telemetry over
 // LAN-only UDP multicast, from any game UE4SS injects. UE4SS provides
 // engine-version-resilient UObject access (incl. the UE4/UE5 FVector
 // large-world-coordinates ABI) — this mod only samples and publishes.
 //
-// Install: <ue4ss>/Mods/ogsa_telemetry/dlls/main.dll (+ optional INI
-// beside the DLL — same keys as uevr-ogsa-ts). Distribution lives at
-// github.com/BrianGilbert/ue4ss-ogsa-ts.
+// Install: <ue4ss>/Mods/ogs_telemetry/dlls/main.dll (+ optional INI
+// beside the DLL — same keys as uevr-ogs-ts). Distribution lives at
+// github.com/BrianGilbert/ue4ss-ogs-ts.
 #ifndef NOMINMAX
 #define NOMINMAX // windows.h min/max macros clash with the Unreal SDK's std::min
 #endif
@@ -22,7 +22,7 @@
 #include <string>
 
 #include <DynamicOutput/Output.hpp>
-#ifdef OGSA_EXP_ABI
+#ifdef OGS_EXP_ABI
 // experimental track: ABI-exact replica (see plugin/experimental/)
 #include "experimental/CppUserModBase.ABI.hpp"
 #else
@@ -35,14 +35,14 @@
 #include <Unreal/AActor.hpp>
 #include <Unreal/Hooks.hpp>
 
-#include "ogsa_publisher.h"
+#include "ogs_publisher.h"
 
-namespace ogsa_mod
+namespace ogs_mod
 {
 using namespace RC;
 using namespace RC::Unreal;
 
-static ogsa::Publisher g_publisher;
+static ogs::Publisher g_publisher;
 static std::chrono::steady_clock::time_point g_lastTick{};
 static std::chrono::steady_clock::time_point g_lastSample{};
 static double g_sampleInterval = 1.0 / 60.0; // motionHz; set on init from config
@@ -54,8 +54,8 @@ static UFunction* g_isPausedFn = nullptr;
 static std::chrono::steady_clock::time_point g_lastControllerResolve{};
 static HMODULE g_module = nullptr;
 
-// UE FRotator::Quaternion() transcription (same as uevr-ogsa-ts)
-static ogsa::telemetry::Quat RotatorToQuat(double pitchDeg, double yawDeg,
+// UE FRotator::Quaternion() transcription (same as uevr-ogs-ts)
+static ogs::telemetry::Quat RotatorToQuat(double pitchDeg, double yawDeg,
                                            double rollDeg)
 {
     const double half = 3.14159265358979323846 / 180.0 / 2.0;
@@ -70,7 +70,7 @@ static ogsa::telemetry::Quat RotatorToQuat(double pitchDeg, double yawDeg,
 
 static std::wstring g_lastPawnName; // raw pawn name last fed to set_type_label
 
-// ---- debug trace (ogsa_telemetry_debug.log beside the DLL) ----
+// ---- debug trace (ogs_telemetry_debug.log beside the DLL) ----
 // Rai Pal's UE4SS ships with both consoles off and no file logging, so the
 // mod writes its own small trace (rewritten each launch): config as loaded,
 // the first pawn name the typeLabel path sees, and every label change.
@@ -84,8 +84,8 @@ static void DebugLog(const char* fmt, ...)
         std::string p(path);
         const auto slash = p.find_last_of("\\/");
         f = fopen((slash == std::string::npos
-            ? std::string("ogsa_telemetry_debug.log")
-            : p.substr(0, slash + 1) + "ogsa_telemetry_debug.log").c_str(), "w");
+            ? std::string("ogs_telemetry_debug.log")
+            : p.substr(0, slash + 1) + "ogs_telemetry_debug.log").c_str(), "w");
         if (!f) return;
     }
     va_list ap; va_start(ap, fmt);
@@ -115,8 +115,8 @@ static int GuardedWritePawnName(UObject* pawn, wchar_t* buf, int bufChars)
 // Reads controller->Pawn + K2 pose. POD-only args. Isolated so its caller
 // can guard it with SEH: during UE5 loading, transient controllers/pawns die
 // mid-load and UEPseudo has no IsValid — an AV here just invalidates the cache.
-static bool TryReadPose(UObject* controller, ogsa::telemetry::Vec3& posCm,
-                        ogsa::telemetry::Quat& quat, UObject** outPawn)
+static bool TryReadPose(UObject* controller, ogs::telemetry::Vec3& posCm,
+                        ogs::telemetry::Quat& quat, UObject** outPawn)
 {
     *outPawn = nullptr;
     auto** pawn = controller->GetValuePtrByPropertyNameInChain<UObject*>(STR("Pawn"));
@@ -132,8 +132,8 @@ static bool TryReadPose(UObject* controller, ogsa::telemetry::Vec3& posCm,
 
 // SEH wrapper: must be its own function (no C++ unwinding objects) to allow
 // __try. Returns 1 on success, 0 on no-pawn, -1 on guarded access violation.
-static int GuardedReadPose(UObject* controller, ogsa::telemetry::Vec3* posCm,
-                           ogsa::telemetry::Quat* quat, UObject** outPawn)
+static int GuardedReadPose(UObject* controller, ogs::telemetry::Vec3* posCm,
+                           ogs::telemetry::Quat* quat, UObject** outPawn)
 {
     __try
     {
@@ -183,8 +183,8 @@ static int GuardedIsPaused(UObject* controller)
     }
 }
 
-static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
-                       ogsa::telemetry::Quat& quat,
+static bool SamplePawn(ogs::telemetry::Vec3& posCm,
+                       ogs::telemetry::Quat& quat,
                        std::wstring* outPawnName = nullptr)
 {
     // Controller resolution is expensive (FindAllOf walks the entire object
@@ -215,8 +215,8 @@ static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
     }
     if (g_cachedController == nullptr) return false;
 
-    ogsa::telemetry::Vec3 pos{};
-    ogsa::telemetry::Quat q{};
+    ogs::telemetry::Vec3 pos{};
+    ogs::telemetry::Quat q{};
     UObject* pawnUsed = nullptr;
     const int rc = GuardedReadPose(g_cachedController, &pos, &q, &pawnUsed);
     if (rc < 0)
@@ -225,7 +225,7 @@ static bool SamplePawn(ogsa::telemetry::Vec3& posCm,
         const int n = ++faults;
         if (n == 1 || n % 100 == 0)
             RC::Output::send<RC::LogLevel::Warning>(
-                STR("[ogsa] stale controller (AV guarded, re-walking); faults={}\n"), n);
+                STR("[ogs] stale controller (AV guarded, re-walking); faults={}\n"), n);
         g_cachedController = nullptr;
         return false;
     }
@@ -272,8 +272,8 @@ static void SampleAndPublish()
         : std::chrono::duration<double>(now - g_lastSample).count();
     g_lastSample = now;
     g_lastTick = now;
-    ogsa::telemetry::Vec3 pos;
-    ogsa::telemetry::Quat quat;
+    ogs::telemetry::Vec3 pos;
+    ogs::telemetry::Quat quat;
     std::wstring pawnName;
     const bool hasPose = SamplePawn(pos, quat, &pawnName);
     if (g_detectPause && hasPose && g_cachedController != nullptr)
@@ -307,7 +307,7 @@ static void SampleAndPublish()
     static int samples = 0;
     if (hasPose && (++samples == 1 || samples % 600 == 0))
         RC::Output::send<RC::LogLevel::Normal>(
-            STR("[ogsa] sample #{}: pawn '{}' at ({:.1f}, {:.1f}, {:.1f})\n"),
+            STR("[ogs] sample #{}: pawn '{}' at ({:.1f}, {:.1f}, {:.1f})\n"),
             samples, pawnName, pos.X, pos.Y, pos.Z);
     g_publisher.tick(dt, hasPose, pos, quat);
 }
@@ -329,7 +329,7 @@ static void OnProcessEvent(UObject* Context, UFunction*, void*)
     (void)Context;
     const int calls = ++g_hookCalls;
     if (calls == 1)
-        RC::Output::send<RC::LogLevel::Normal>(STR("[ogsa] first ProcessEvent observed\n"));
+        RC::Output::send<RC::LogLevel::Normal>(STR("[ogs] first ProcessEvent observed\n"));
     SampleAndPublish();
 }
 
@@ -362,7 +362,7 @@ static uint16_t ObjectTypeFromName(const std::string& s)
     // ObjectType ordinals since corpus v3: `other` holds 0 so the
     // catch-all never interleaves with real classes — 0 other, 1 vehicle,
     // 2 aircraft, 3 watercraft, 4 spacecraft, 5 humanoid, 6 camera,
-    // 7 creature (same table as uevr-ogsa-ts)
+    // 7 creature (same table as uevr-ogs-ts)
     if (s == "vehicle") return 1;
     if (s == "aircraft") return 2;
     if (s == "watercraft") return 3;
@@ -373,15 +373,15 @@ static uint16_t ObjectTypeFromName(const std::string& s)
     return 5; // humanoid
 }
 
-static void LoadConfig(ogsa::PublisherConfig& cfg)
+static void LoadConfig(ogs::PublisherConfig& cfg)
 {
     char dllPath[MAX_PATH]{};
     GetModuleFileNameA(g_module, dllPath, MAX_PATH);
     std::string p(dllPath);
     const auto slash = p.find_last_of("\\/");
     std::ifstream ini(slash == std::string::npos
-        ? std::string("ogsa_telemetry.ini")
-        : p.substr(0, slash + 1) + "ogsa_telemetry.ini");
+        ? std::string("ogs_telemetry.ini")
+        : p.substr(0, slash + 1) + "ogs_telemetry.ini");
     if (!ini) return;
     std::string line;
     while (std::getline(ini, line))
@@ -400,38 +400,38 @@ static void LoadConfig(ogsa::PublisherConfig& cfg)
             cfg.sendDynamics = (val != "off" && val != "0");
         else if (key == "pause")
             g_detectPause = (val != "off" && val != "0");
-        // (engine= ABI flag from uevr-ogsa-ts is not needed here: UE4SS
+        // (engine= ABI flag from uevr-ogs-ts is not needed here: UE4SS
         //  adapts the UE4/UE5 FVector layout itself)
     }
 }
-} // namespace ogsa_mod
+} // namespace ogs_mod
 
-class OgsaTelemetryMod : public RC::CppUserModBase
+class OgsTelemetryMod : public RC::CppUserModBase
 {
 public:
-    OgsaTelemetryMod()
+    OgsTelemetryMod()
     {
-        ModName = STR("ogsa_telemetry");
+        ModName = STR("ogs_telemetry");
         ModVersion = STR("0.1");
         ModAuthors = STR("BrianGilbert");
-        ModDescription = STR("OGSA-TS motion telemetry: publishes the controlled pawn over UDP multicast (LAN only)");
+        ModDescription = STR("OGS-TS motion telemetry: publishes the controlled pawn over UDP multicast (LAN only)");
     }
 
-    ~OgsaTelemetryMod() override { ogsa_mod::g_publisher.stop(); }
+    ~OgsTelemetryMod() override { ogs_mod::g_publisher.stop(); }
 
     auto on_unreal_init() -> void override
     {
-        using namespace ogsa_mod;
-        ogsa::PublisherConfig cfg;
+        using namespace ogs_mod;
+        ogs::PublisherConfig cfg;
         cfg.gameName = _strdup(DefaultGameName().c_str());
         LoadConfig(cfg);
-        DebugLog("ogsa_telemetry mod start: game='%s' object='%s' -> %s:%d\n",
+        DebugLog("ogs_telemetry mod start: game='%s' object='%s' -> %s:%d\n",
                  cfg.gameName, cfg.objectName, cfg.group, cfg.port);
         g_sampleInterval = 1.0 / (cfg.motionHz > 0.5 ? cfg.motionHz : 60.0);
         if (!g_publisher.start(cfg))
         {
             RC::Output::send<RC::LogLevel::Error>(
-                STR("[ogsa] failed to create multicast socket — mod disabled\n"));
+                STR("[ogs] failed to create multicast socket — mod disabled\n"));
             return;
         }
 
@@ -458,7 +458,7 @@ public:
             bool fallback = NameNoType == STR("/Script/Engine.Actor:ReceiveTick");
             if (!primary && !fallback) return LoopAction::Continue;
             ++found;
-            RC::Output::send<RC::LogLevel::Normal>(STR("[ogsa] tick candidate: {}{}\n"),
+            RC::Output::send<RC::LogLevel::Normal>(STR("[ogs] tick candidate: {}{}\n"),
                 NameNoType, primary ? STR("") : STR(" (script)"));
             if (primary && (primaryTarget == nullptr ||
                             NameNoType == STR("/Script/Engine.HUD:DrawHUD")))
@@ -484,9 +484,9 @@ public:
         // detour sees all of them. Cadence-gated in SampleAndPublish.
         Hook::RegisterProcessEventPreCallback(OnProcessEvent);
         RC::Output::send<RC::LogLevel::Normal>(
-            STR("[ogsa] {} tick hook(s) + ProcessEvent heartbeat active\n"), hooks);
+            STR("[ogs] {} tick hook(s) + ProcessEvent heartbeat active\n"), hooks);
         RC::Output::send<RC::LogLevel::Normal>(
-            STR("[ogsa] OGSA-TS telemetry loaded: pawn tracking -> {}:{} (game={})\n"),
+            STR("[ogs] OGS-TS telemetry loaded: pawn tracking -> {}:{} (game={})\n"),
             std::wstring(cfg.group, cfg.group + std::strlen(cfg.group)),
             cfg.port,
             std::wstring(cfg.gameName, cfg.gameName + std::strlen(cfg.gameName)));
@@ -495,12 +495,12 @@ public:
 
 extern "C"
 {
-    __declspec(dllexport) RC::CppUserModBase* start_mod() { return new OgsaTelemetryMod(); }
+    __declspec(dllexport) RC::CppUserModBase* start_mod() { return new OgsTelemetryMod(); }
     __declspec(dllexport) void uninstall_mod(RC::CppUserModBase* mod) { delete mod; }
 }
 
 BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID)
 {
-    if (reason == DLL_PROCESS_ATTACH) ogsa_mod::g_module = module;
+    if (reason == DLL_PROCESS_ATTACH) ogs_mod::g_module = module;
     return TRUE;
 }

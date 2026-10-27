@@ -1,4 +1,4 @@
-# ue4ss-ogsa-ts
+# ue4ss-ogs-ts
 
 > [!IMPORTANT]
 > **In active development.** Validated in The Gunk, Stray, Hot Wheels
@@ -10,15 +10,15 @@
 >
 > Development is funded by
 > [sponsorship](https://github.com/sponsors/BrianGilbert), which moves this
-> and the rest of the [OGSA](https://github.com/Open-Game-Standards-Alliance)
+> and the rest of the [OGS](https://github.com/Open-Game-Standards)
 > work forward.
 
 [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) C++ mod that publishes
-[OGSA Telemetry Standard (OGSA-TS)](https://github.com/Open-Game-Standards-Alliance/OGSA-Telemetry-Standard)
+[OGS Telemetry Standard (OGS-TS)](https://github.com/Open-Game-Standards/OGS-Telemetry-Standard)
 motion telemetry from **any UE4/UE5 flatscreen game UE4SS injects** —
 zero game modification, LAN-only UDP multicast. Motion platforms,
 haptic hardware, and dashboards on the local network can follow the
-game. Companion plugin: [uevr-ogsa-ts](https://github.com/BrianGilbert/uevr-ogsa-ts) (VR).
+game. Companion plugin: [uevr-ogs-ts](https://github.com/BrianGilbert/uevr-ogs-ts) (VR).
 
 Support & discussion: [Discord](https://discord.gg/yyCp5D2Ccp)
 
@@ -97,16 +97,16 @@ which every Blueprint-ticked actor bypasses).
 ## Install
 
 1. Pick the folder that matches your UE4SS runtime and copy its
-   `ogsa_telemetry` folder into `<ue4ss>/Mods/` — that's the whole
+   `ogs_telemetry` folder into `<ue4ss>/Mods/` — that's the whole
    install (the two lineages have incompatible `CppUserModBase`
    vtables, so a mod DLL only loads into its own lineage):
 
    | Runtime you have | Folder in the release zip | Build track |
    |---|---|---|
-   | official [v3.0.1](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/v3.0.1) | `3.0.1/ogsa_telemetry/` | `build-mod.cmd` |
-   | [`experimental-latest`](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest) rolling release (incl. Rai Pal's bundle) | `experimental/ogsa_telemetry/` | `build-experimental.cmd` |
+   | official [v3.0.1](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/v3.0.1) | `3.0.1/ogs_telemetry/` | `build-mod.cmd` |
+   | [`experimental-latest`](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest) rolling release (incl. Rai Pal's bundle) | `experimental/ogs_telemetry/` | `build-experimental.cmd` |
 
-   Each variant is ready to drop in: `ogsa_telemetry/dlls/main.dll`
+   Each variant is ready to drop in: `ogs_telemetry/dlls/main.dll`
    plus an `enabled.txt` (UE4SS only starts mods listed in `mods.txt`
    or carrying `enabled.txt`; without it the mod is silently never
    loaded — no error in `UE4SS.log`).
@@ -128,11 +128,11 @@ which every Blueprint-ticked actor bypasses).
    # -> build-exp/main.dll
    ```
 3. If you built from source instead, drop into
-   `<ue4ss>/Mods/ogsa_telemetry/dlls/main.dll`
+   `<ue4ss>/Mods/ogs_telemetry/dlls/main.dll`
    (per-game: `<game>/ue4ss/Mods/...`) and create an empty
-   `<ue4ss>/Mods/ogsa_telemetry/enabled.txt` — same layout the release
+   `<ue4ss>/Mods/ogs_telemetry/enabled.txt` — same layout the release
    zip ships.
-4. Optional `ogsa_telemetry.ini` beside the DLL:
+4. Optional `ogs_telemetry.ini` beside the DLL:
    ```ini
    group=239.255.17.17
    port=40123
@@ -157,7 +157,7 @@ which every Blueprint-ticked actor bypasses).
    reset the estimator, and rates come from quaternion deltas — no Euler
    representation-flip artifacts (see GameConn `docs/cueing.md` for the
    receiver-side value).
-5. Pair with a receiver — e.g. ogsa-ts-dotnet's
+5. Pair with a receiver — e.g. ogs-ts-dotnet's
    `dotnet run --project src/TelemetryReceive`.
 
 ### Rai Pal deployments
@@ -178,7 +178,7 @@ pointing at Rai Pal's data copy
 (`<appdata>/raicuparta/rai-pal/data/installed-mods/<game-id>/ue4ss/`),
 which holds the real `UE4SS.dll` and — because UE4SS's default mods
 folder sits beside its DLL — **the "Open Mod Folder" location IS the
-live mod folder**: drop `experimental/ogsa_telemetry` from the release
+live mod folder**: drop `experimental/ogs_telemetry` from the release
 zip there and it loads (it carries `dlls/main.dll` + the `enabled.txt`
 UE4SS requires — without `enabled.txt` the mod is silently never
 loaded, no error in `UE4SS.log`).
@@ -191,7 +191,7 @@ move the pair into the same folder as the game's `*-Win64-Shipping.exe`.
 If an older manual UE4SS install also lives in the game dir (its own
 `UE4SS.dll` + `Mods/`), remove it — two installs shadow each other and
 the stale one wins, which looks exactly like "my mod updates never take
-effect". The mod's `ogsa_telemetry_debug.log` (rewritten beside its DLL
+effect". The mod's `ogs_telemetry_debug.log` (rewritten beside its DLL
 every launch) tells you which copy actually ran.
 
 For reference, the Rai Pal gotchas observed in the field (they apply to
@@ -205,16 +205,16 @@ any UE4SS mod under Rai Pal):
   Fix: copy both files next to the game exe.
 - **Mod registration.** UE4SS only starts mods listed in `mods.txt` or
   carrying an `enabled.txt` in their mod folder — Rai Pal's lists only
-  cover mods it installed itself. Fix: add `ogsa_telemetry : 1` to
-  `Mods/mods.txt` (or create `Mods/ogsa_telemetry/enabled.txt`).
+  cover mods it installed itself. Fix: add `ogs_telemetry : 1` to
+  `Mods/mods.txt` (or create `Mods/ogs_telemetry/enabled.txt`).
 
 Verify with `UE4SS.log` in the install folder: it should show the
-scan results, `Starting mod ogsa_telemetry`, the tick candidates the
-mod found, and `OGSA-TS telemetry loaded`.
+scan results, `Starting mod ogs_telemetry`, the tick candidates the
+mod found, and `OGS-TS telemetry loaded`.
 
 ## Standalone test (no game)
 
-`cmake --build build-ninja --target ogsa_smoke && build-ninja/ogsa_smoke.exe`
+`cmake --build build-ninja --target ogs_smoke && build-ninja/ogs_smoke.exe`
 — conversion assertions + 150 synthetic ticks; exit 0 = pass. Run
 TelemetryReceive beside it to watch `synthetic_pawn` on the wire.
 
@@ -224,8 +224,8 @@ TelemetryReceive beside it to watch `synthetic_pawn` on the wire.
 |---|---|
 | `plugin/Mod.cpp` | UE4SS glue (pawn lookup, K2 calls, ProcessEvent heartbeat, INI) |
 | `plugin/experimental/CppUserModBase.ABI.hpp` | ABI-exact replica of the experimental-lineage mod base (vtable + layout pin) |
-| `plugin/ogsa_publisher.*` | engine-agnostic publisher (shared with uevr-ogsa-ts) |
-| `OgsaTelemetry/` | vendored canonical-encoding serializer (sync-core.ps1 from ogsa-ts-unreal), corpus-locked |
+| `plugin/ogs_publisher.*` | engine-agnostic publisher (shared with uevr-ogs-ts) |
+| `OgsTelemetry/` | vendored canonical-encoding serializer (sync-core.ps1 from ogs-ts-unreal), corpus-locked |
 | `vendor/exp/` | experimental-track headers: public main-lineage deps + recoverable UEPseudo snapshot + fmt 11.2.0 |
 | `prepare-experimental.ps1` + `build-experimental.cmd` | experimental track: import lib from the real runtime's exports, thin build |
 | `patches/` + `prepare-ue4ss.ps1` | pinned UE4SS v3.0.1 dep tree reconstruction |
