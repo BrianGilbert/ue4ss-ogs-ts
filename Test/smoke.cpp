@@ -111,6 +111,8 @@ int main()
     pub.stop();
     Check("150 ticks published (discovery + motion sent, typeLabel "
           "swapped at tick 75)", true);
+    Check("typeLabel swap after discovery starts generation 1",
+          pub.generation() == 1);
 
     // ---- derived body dynamics (circling pawn, position-delta velocity) ----
     {

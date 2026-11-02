@@ -146,7 +146,9 @@ which every Blueprint-ticked actor bypasses).
    ```
    The tracked pawn's class name is surfaced automatically as the object's
    `typeLabel` in discovery (e.g. "BP_PlayerCharacter_C"), re-sent when
-   possession changes; `objectName` stays the stable matching key.
+   possession changes under a new discovery `generation` (the label is
+   object identity; motion frames carry the generation too);
+   `objectName` stays the stable matching key.
    (UE4/UE5 FVector layout is handled automatically by UE4SS's SDK.)
 
    Motion frames carry pose **plus the `bodyDynamics` variant** — specific
