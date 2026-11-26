@@ -51,6 +51,8 @@ static UObject* g_cachedController = nullptr;
 static bool g_detectPause = true; // INI pause=off disables (C-11)
 static UObject* g_pauseFnOwner = nullptr; // controller g_isPausedFn was resolved on
 static UFunction* g_isPausedFn = nullptr;
+static UObject* g_velocityFnOwner = nullptr;
+static UFunction* g_getVelocityFn = nullptr;
 static std::chrono::steady_clock::time_point g_lastControllerResolve{};
 static HMODULE g_module = nullptr;
 
@@ -146,6 +148,36 @@ static int GuardedReadPose(UObject* controller, ogs::telemetry::Vec3* posCm,
     }
 }
 
+static bool TryReadVelocity(UObject* pawn, ogs::telemetry::Vec3* velCm)
+{
+    if (pawn != g_velocityFnOwner)
+    {
+        g_velocityFnOwner = pawn;
+        g_getVelocityFn = pawn->GetFunctionByNameInChain(STR("GetVelocity"));
+    }
+    if (g_getVelocityFn == nullptr) return false;
+    FProperty* ret = g_getVelocityFn->GetReturnProperty();
+    if (ret == nullptr) return false;
+    alignas(16) uint8_t parms[64]{};
+    pawn->ProcessEvent(g_getVelocityFn, parms);
+    FVector* v = ret->ContainerPtrToValuePtr<FVector>(parms);
+    *velCm = { (float)v->GetX(), (float)v->GetY(), (float)v->GetZ() };
+    return true;
+}
+
+static bool GuardedReadVelocity(UObject* pawn, ogs::telemetry::Vec3* velCm)
+{
+    __try
+    {
+        return TryReadVelocity(pawn, velCm);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        g_velocityFnOwner = nullptr;
+        return false;
+    }
+}
+
 // Pause (standard CONVENTIONS C-11): APlayerController::IsPaused is
 // BlueprintCallable and reports the world's pause state, so it is called
 // by reflection on the cached controller. It takes no inputs — the return
@@ -185,6 +217,7 @@ static int GuardedIsPaused(UObject* controller)
 
 static bool SamplePawn(ogs::telemetry::Vec3& posCm,
                        ogs::telemetry::Quat& quat,
+                       ogs::telemetry::Vec3& velCm, bool& hasVel,
                        std::wstring* outPawnName = nullptr)
 {
     // Controller resolution is expensive (FindAllOf walks the entire object
@@ -232,6 +265,7 @@ static bool SamplePawn(ogs::telemetry::Vec3& posCm,
     if (rc == 0 || pawnUsed == nullptr) return false;
     posCm = pos;
     quat = q;
+    hasVel = GuardedReadVelocity(pawnUsed, &velCm);
     if (outPawnName != nullptr)
     {
         wchar_t buf[160];
@@ -275,7 +309,9 @@ static void SampleAndPublish()
     ogs::telemetry::Vec3 pos;
     ogs::telemetry::Quat quat;
     std::wstring pawnName;
-    const bool hasPose = SamplePawn(pos, quat, &pawnName);
+    ogs::telemetry::Vec3 vel{};
+    bool hasVel = false;
+    const bool hasPose = SamplePawn(pos, quat, vel, hasVel, &pawnName);
     if (g_detectPause && hasPose && g_cachedController != nullptr)
     {
         // this ProcessEvent re-enters OnProcessEvent, which the cadence
@@ -309,7 +345,39 @@ static void SampleAndPublish()
         RC::Output::send<RC::LogLevel::Normal>(
             STR("[ogs] sample #{}: pawn '{}' at ({:.1f}, {:.1f}, {:.1f})\n"),
             samples, pawnName, pos.X, pos.Y, pos.Z);
-    g_publisher.tick(dt, hasPose, pos, quat);
+    g_publisher.tick(dt, hasPose, pos, quat, hasVel, vel);
+    if (hasPose)
+    {
+        static int loggedWindows = 0, loggedFailures = 0;
+        const ogs::VelocityCheck& check = g_publisher.velocity_check();
+        if (check.windows() != loggedWindows)
+        {
+            loggedWindows = check.windows();
+            const int failures = check.failures_in_a_row();
+            if (check.skipped_as_frozen())
+                DebugLog("t=%.3f velocity check not counted, the pose barely moved: moved %.1f m, "
+                         "engine velocity explains %.1f m\n",
+                         g_publisher.stream_time(), check.path_metres(), check.claimed_metres());
+            else if (failures > 0 && failures <= ogs::VelocityCheck::FailuresBeforeDistrust)
+                DebugLog("t=%.3f velocity check failed (%d in a row): unexplained %.1f m, allowed %.1f m, "
+                         "moved %.1f m, engine reading %.1f %.1f %.1f cm/s\n",
+                         g_publisher.stream_time(), failures, check.unexplained_metres(),
+                         check.allowed_metres(), check.path_metres(), vel.X, vel.Y, vel.Z);
+            else if (failures == 0 && loggedFailures > 0)
+                DebugLog("t=%.3f velocity check passed again\n", g_publisher.stream_time());
+            loggedFailures = failures;
+        }
+        static int loggedSource = -1;
+        const int source = hasVel && g_publisher.using_engine_velocity() ? 1 : 0;
+        if (source != loggedSource)
+        {
+            loggedSource = source;
+            DebugLog("t=%.3f velocity source: %s (engine reading %s, %.1f %.1f %.1f cm/s)\n",
+                     g_publisher.stream_time(), source ? "engine" : "position",
+                     !hasVel ? "unavailable" : source ? "agrees with movement" : "disagrees with movement",
+                     vel.X, vel.Y, vel.Z);
+        }
+    }
 }
 
 static void OnEngineTickPost(UnrealScriptFunctionCallableContext&, void*)

@@ -154,8 +154,12 @@ which every Blueprint-ticked actor bypasses).
    Motion frames carry pose **plus the `bodyDynamics` variant** — specific
    force (m/s², accelerometer-style: `f = a − g`, +1 g up at rest) and
    angular velocity (rad/s, C-4 body-frame sense), derived per engine tick
-   from the pawn pose (position-delta velocity; UEPseudo exposes no typed
-   GetVelocity). Acceleration is low-pass filtered (τ = 0.1 s), teleports
+   from the pawn pose and the engine's `GetVelocity`. While that reading is
+   missing or disagrees with how the pawn moves, velocity comes from position
+   deltas, which are noisier. That takes three failed half-second checks in a
+   row. A check where the pawn barely moved isn't counted, for up to six in a
+   row, and `ogs_telemetry_debug.log` records each failure and the source in
+   use. Acceleration is low-pass filtered (τ = 0.1 s), teleports
    reset the estimator, and rates come from quaternion deltas — no Euler
    representation-flip artifacts (see GameConn `docs/cueing.md` for the
    receiver-side value).
