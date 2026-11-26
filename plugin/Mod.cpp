@@ -23,12 +23,7 @@
 #include <string>
 
 #include <DynamicOutput/Output.hpp>
-#ifdef OGS_EXP_ABI
-// experimental track: ABI-exact replica (see plugin/experimental/)
 #include "experimental/CppUserModBase.ABI.hpp"
-#else
-#include <Mod/CppUserModBase.hpp>
-#endif
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UObject.hpp>
 #include <Unreal/UFunction.hpp>

@@ -44,7 +44,9 @@ if (-not $Ue4ssDll) {
     # Official rolling release. The asset name embeds the build commit; query
     # the release for the current UE4SS_*.zip rather than hardcoding it.
     Write-Host "[exp] no -Ue4ssDll/-GameDir; downloading official experimental-latest release"
-    $rel = Invoke-RestMethod "https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/tags/experimental-latest"
+    $headers = @{}
+    if ($env:GITHUB_TOKEN) { $headers.Authorization = "Bearer $env:GITHUB_TOKEN" }
+    $rel = Invoke-RestMethod "https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/tags/experimental-latest" -Headers $headers
     $asset = $rel.assets | Where-Object { $_.name -match '^UE4SS_v\d' } | Select-Object -First 1
     if (-not $asset) { throw "no UE4SS_*.zip asset on the experimental-latest release" }
     Write-Host "[exp] release asset: $($asset.name)"
@@ -110,7 +112,7 @@ if ($VendorHeaders) {
         Write-Host "[exp] vendored $m"
     }
     $gsrc = Join-Path $ue "deps\first\Unreal\generated_include"
-    if (-not (Test-Path $gsrc)) { throw "missing UEPseudo generated_include (reconstruct via the v3.0.1 prepare first)" }
+    if (-not (Test-Path $gsrc)) { throw "missing UEPseudo generated_include in $Ue4ssRepo" }
     Copy-Item -Recurse -Force "$gsrc\*" $gen
     Write-Host "[exp] vendored UEPseudo generated_include"
     Write-Host "[exp] note: Unreal headers must be the recoverable d09b7218-era tree (see AGENTS.md)"

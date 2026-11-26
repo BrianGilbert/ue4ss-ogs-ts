@@ -22,53 +22,41 @@ game. Companion plugin: [uevr-ogs-ts](https://github.com/BrianGilbert/uevr-ogs-t
 
 Support & discussion: [Discord](https://discord.gg/yyCp5D2Ccp)
 
-Status: **in-game validated** — live pawn telemetry observed on a real
-receiver in *Stray* (UE 4.27), *The Gunk* (UE 4.26) and *RoboCop:
-Rogue City* (UE 5.2): position/yaw tracking movement, unit-norm
-quaternions, pawn handover across menu↔gameplay, level changes and
-UE5 load transitions. Smoke suite 16/16 (wire + derived body dynamics + pause).
-Two build tracks, each pairing
-with a different UE4SS runtime lineage (see Install):
-
-- **v3.0.1 track** — built against the official **v3.0.1** runtime
-  (validated in-game, above).
-- **experimental track** — links against the official
-  **`experimental-latest` rolling release** runtime (the line Rai Pal
-  bundles); **in-game validated** on Hot Wheels Unleashed (UE 4.26,
-  Rai Pal-bundled runtime, 2026-10-12).
+Status: **in-game validated** on Hot Wheels Unleashed (UE 4.26) through
+Rai Pal's bundled runtime. The mod builds against the official
+**`experimental-latest` rolling release** of UE4SS, the line Rai Pal
+bundles. It doesn't load into UE4SS v3.0.1; releases up to `v2026.11.04`
+include a DLL for that runtime.
 
 ## Supported engines
 
-UE4SS does the engine discovery, so the support band is theirs:
-**UE 4.12 – 5.x** on the UE4SS **v3.0.1** the v3.0.1 track builds
-against (the upstream project's stated target for that line). The
-maintained fork, [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS), now
-states **UE 4.7 – 5.8** — use the **experimental** DLL for that band
-(older/newer engines than v3.0.1 covers).
+UE4SS does the engine discovery, so the support band is theirs. The
+maintained fork, [RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS), states
+**UE 4.7 – 5.8**.
 
 Validated in-game with this mod:
 
 | Game | Engine | Notes |
 |---|---|---|
-| The Gunk | UE 4.26 | pawn handover across levels |
-| Stray | UE 4.27 | menu ↔ gameplay cycles |
-| Hot Wheels Unleashed | UE 4.26 | experimental build via Rai Pal's bundled runtime |
-| RoboCop: Rogue City | UE 5.2 | needs the SEH-guarded build (`v2026.10.10.7`+) — UE5 load transitions kill stale controllers |
+| Hot Wheels Unleashed | UE 4.26 | current build, Rai Pal's bundled runtime |
+| The Gunk | UE 4.26 | UE4SS v3.0.1 build, not retested with the current one |
+| Stray | UE 4.27 | UE4SS v3.0.1 build, not retested with the current one |
+| RoboCop: Rogue City | UE 5.2 | UE4SS v3.0.1 build, not retested with the current one |
 
 UE4SS prints the detected version during startup in `UE4SS.log`
-(e.g. `EngineVersion 4.11` in the PS scan section).
+(for example `EngineVersion 4.11` in the PS scan section).
 
 Two caveats from the field:
 
-- **Below the v3.0.1 floor**: e.g. *Days Gone* is genuinely UE 4.11;
-  UE4SS detects the version, then the signature scan times out
+- **Older engines can fail**: *Days Gone* is UE 4.11. With UE4SS v3.0.1,
+  UE4SS detected the version, then the signature scan timed out
   (`GUObjectArray` / `FName_ToString` unresolved, `FName_Constructor`
-  ambiguous) and the mod never loads. UE4SS itself failed to
-  initialize — nothing downstream can run.
+  ambiguous) and the mod never loaded. When UE4SS fails to initialize,
+  nothing downstream can run.
 - **In-band games can still fail**: shipping builds sometimes need
   custom AOBs. Symptom: `expected at least one value` or
   `PS scan timed out` in `UE4SS.log`. Fix: place `UE4SS_Signatures/*.lua`
-  overrides (e.g. `GUObjectArray.lua`) in the working directory next to
+  overrides (for example `GUObjectArray.lua`) in the working directory next to
   `ue4ss.dll`, per the
   [Updating AOBs guide](https://github.com/UE4SS/UE4SS/blob/master/Guides/FixingBrokenAOBs.md).
 
@@ -91,37 +79,29 @@ live on the mesh component, so a walking character reports yaw-only
 
 Sampling is cadence-gated to `motionHz` inside a **ProcessEvent
 detour** — the game-thread heartbeat that sees every script call
-(by-name UFunction hooks only match the base-class function node,
+(by-name `UFunction` hooks only match the base-class function node,
 which every Blueprint-ticked actor bypasses).
 
 ## Install
 
-1. Pick the folder that matches your UE4SS runtime and copy its
-   `ogs_telemetry` folder into `<ue4ss>/Mods/` — that's the whole
-   install (the two lineages have incompatible `CppUserModBase`
-   vtables, so a mod DLL only loads into its own lineage):
+### With Rai Pal
 
-   | Runtime you have | Folder in the release zip | Build track |
-   |---|---|---|
-   | official [v3.0.1](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/v3.0.1) | `3.0.1/ogs_telemetry/` | `build-mod.cmd` |
-   | [`experimental-latest`](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest) rolling release (incl. Rai Pal's bundle) | `experimental/ogs_telemetry/` | `build-experimental.cmd` |
+In [Rai Pal](https://github.com/Raicuparta/rai-pal), select the game and
+install **OGS Telemetry (UE4SS)**. It uses Rai Pal's UE4SS, so there's
+nothing to download or copy. Then run the game through Rai Pal. The optional
+settings and the receiver steps below still apply.
 
-   Each variant is ready to drop in: `ogs_telemetry/dlls/main.dll`
-   plus an `enabled.txt` (UE4SS only starts mods listed in `mods.txt`
-   or carrying `enabled.txt`; without it the mod is silently never
-   loaded — no error in `UE4SS.log`).
+### Without Rai Pal
 
-   The v3.0.1 runtime needs .NET 6 for the UE4SS UI; extract its zip
-   into the game's binary directory (the folder with the game's
-   `*-Win64-Shipping.exe`).
-2. Build (or take CI artifacts):
+1. Copy `experimental/ogs_telemetry/` from the release zip into
+   `<ue4ss>/Mods/`. That's the whole install. It needs the
+   [`experimental-latest`](https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest)
+   rolling release of UE4SS. The folder holds
+   `dlls/main.dll` plus an `enabled.txt` (UE4SS only starts mods listed in
+   `mods.txt` or carrying `enabled.txt`; without it the mod is silently never
+   loaded, with no error in `UE4SS.log`).
+2. Or build it, with Visual Studio 2022's C++ tools:
    ```powershell
-   # v3.0.1 track (in-game validated)
-   ./prepare-ue4ss.ps1          # reconstructs the pinned UE4SS 3.0.1 dep tree at ../ue4ss-v3.0.1
-   ./build-mod.cmd              # era-pinned cmake 3.31 + rust 1.79 (see AGENTS.md)
-   # -> build-ninja/main.dll
-
-   # experimental track (pairs with experimental-latest runtimes)
    ./prepare-experimental.ps1   # downloads the official experimental runtime,
                                 # generates UE4SS.lib from its real export table
    ./build-experimental.cmd     # ABI-replica thin build (see AGENTS.md)
@@ -145,11 +125,11 @@ which every Blueprint-ticked actor bypasses).
                          ; stripped ("Game-Win64-Shipping" -> "Game")
    ```
    The tracked pawn's class name is surfaced automatically as the object's
-   `typeLabel` in discovery (e.g. "BP_PlayerCharacter_C"), re-sent when
+   `typeLabel` in discovery (for example "BP_PlayerCharacter_C"), re-sent when
    possession changes under a new discovery `generation` (the label is
    object identity; motion frames carry the generation too);
    `objectName` stays the stable matching key.
-   (UE4/UE5 FVector layout is handled automatically by UE4SS's SDK.)
+   (UE4/UE5 `FVector` layout is handled automatically by UE4SS's SDK.)
 
    Motion frames carry pose **plus the `bodyDynamics` variant** — specific
    force (m/s², accelerometer-style: `f = a − g`, +1 g up at rest) and
@@ -166,76 +146,44 @@ which every Blueprint-ticked actor bypasses).
    reset the estimator, and rates come from quaternion deltas — no Euler
    representation-flip artifacts (see GameConn `docs/cueing.md` for the
    receiver-side value).
-5. Pair with a receiver — e.g. ogs-ts-dotnet's
+5. Pair with a receiver, for example ogs-ts-dotnet's
    `dotnet run --project src/TelemetryReceive`.
 
-### Rai Pal deployments
+### If it doesn't load through Rai Pal
 
-Rai Pal bundles an **experimental-lineage** UE4SS — use the
-**experimental** DLL (`experimental/main.dll`) with it; the v3.0.1 DLL
-crashes on that runtime (verified in the field: access violation in the
-mod DLL at startup — the `CppUserModBase` vtable grew after v3.0.1).
-Alternatively, install the official UE4SS v3.0.1 into the game's binary
-directory yourself and use the v3.0.1 DLL — the official `dwmapi.dll`
-beside the game exe wins over anything else.
+- **No `UE4SS.log` anywhere** (observed on The Gunk): Rai Pal can put its
+  `dwmapi.dll` and `override.txt` in `Engine/Binaries/Win64/`, where Windows
+  never loads them. Move both into the folder with the game's
+  `*-Win64-Shipping.exe`.
+- **Updates have no effect:** an older manual UE4SS install in the game
+  folder, with its own `UE4SS.dll` and `Mods/`, takes the place of Rai Pal's.
+  Remove it. The mod rewrites `ogs_telemetry_debug.log` beside its DLL at
+  every launch, so the log shows which copy ran.
 
-Installing the mod through Rai Pal (bundled UE4SS):
-
-Rai Pal's UE4SS layout (verified in the field, 2026-10-12): the game's
-binary directory gets a `dwmapi.dll` proxy plus an `override.txt`
-pointing at Rai Pal's data copy
-(`<appdata>/raicuparta/rai-pal/data/installed-mods/<game-id>/ue4ss/`),
-which holds the real `UE4SS.dll` and — because UE4SS's default mods
-folder sits beside its DLL — **the "Open Mod Folder" location IS the
-live mod folder**: drop `experimental/ogs_telemetry` from the release
-zip there and it loads (it carries `dlls/main.dll` + the `enabled.txt`
-UE4SS requires — without `enabled.txt` the mod is silently never
-loaded, no error in `UE4SS.log`).
-
-**Placement gotcha (observed on The Gunk):** Rai Pal can put the
-`dwmapi.dll` + `override.txt` pair in `Engine/Binaries/Win64/` instead
-of the game-exe directory — the Windows DLL search order never reaches
-it there, so UE4SS silently never loads (no `UE4SS.log` anywhere). Fix:
-move the pair into the same folder as the game's `*-Win64-Shipping.exe`.
-If an older manual UE4SS install also lives in the game dir (its own
-`UE4SS.dll` + `Mods/`), remove it — two installs shadow each other and
-the stale one wins, which looks exactly like "my mod updates never take
-effect". The mod's `ogs_telemetry_debug.log` (rewritten beside its DLL
-every launch) tells you which copy actually ran.
-
-For reference, the Rai Pal gotchas observed in the field (they apply to
-any UE4SS mod under Rai Pal):
-
-- **Proxy placement.** Rai Pal drops its `dwmapi.dll` + `override.txt`
-  pair where it thinks the engine binaries live. If the game exe is in
-  `<Game>/<Project>/Binaries/Win64/` and the proxy lands in
-  `<Game>/Engine/Binaries/Win64/`, the loader never enters the DLL
-  search path and UE4SS silently never runs (no `UE4SS.log` anywhere).
-  Fix: copy both files next to the game exe.
-- **Mod registration.** UE4SS only starts mods listed in `mods.txt` or
-  carrying an `enabled.txt` in their mod folder — Rai Pal's lists only
-  cover mods it installed itself. Fix: add `ogs_telemetry : 1` to
-  `Mods/mods.txt` (or create `Mods/ogs_telemetry/enabled.txt`).
-
-Verify with `UE4SS.log` in the install folder: it should show the
-scan results, `Starting mod ogs_telemetry`, the tick candidates the
-mod found, and `OGS-TS telemetry loaded`.
+When the mod loads, `UE4SS.log` shows the scan results,
+`Starting mod ogs_telemetry`, the tick candidates the mod found and
+`OGS-TS telemetry loaded`.
 
 ## Standalone test (no game)
 
-`cmake --build build-ninja --target ogs_smoke && build-ninja/ogs_smoke.exe`
-— conversion assertions + 150 synthetic ticks; exit 0 = pass. Run
-TelemetryReceive beside it to watch `synthetic_pawn` on the wire.
+```powershell
+cmake -S Test -B Test/build
+cmake --build Test/build --config Release --target ogs_smoke
+Test/build/Release/ogs_smoke.exe
+```
+
+It checks the conversions, the wire path and the derived dynamics with
+synthetic ticks; exit 0 means pass. Run TelemetryReceive beside it to watch
+the synthetic objects on the wire.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `plugin/Mod.cpp` | UE4SS glue (pawn lookup, K2 calls, ProcessEvent heartbeat, INI) |
-| `plugin/experimental/CppUserModBase.ABI.hpp` | ABI-exact replica of the experimental-lineage mod base (vtable + layout pin) |
+| `plugin/experimental/CppUserModBase.ABI.hpp` | ABI replica of the experimental-lineage mod base (vtable + layout pin) |
 | `plugin/ogs_publisher.*` | engine-agnostic publisher (shared with uevr-ogs-ts) |
 | `OgsTelemetry/` | vendored canonical-encoding serializer (sync-core.ps1 from ogs-ts-unreal), corpus-locked |
-| `vendor/exp/` | experimental-track headers: public main-lineage deps + recoverable UEPseudo snapshot + fmt 11.2.0 |
-| `prepare-experimental.ps1` + `build-experimental.cmd` | experimental track: import lib from the real runtime's exports, thin build |
-| `patches/` + `prepare-ue4ss.ps1` | pinned UE4SS v3.0.1 dep tree reconstruction |
-| `Test/smoke.cpp` | standalone wire-path + math verification |
+| `vendor/exp/` | vendored headers: public main-lineage deps + recoverable UEPseudo snapshot + `fmt` 11.2.0 |
+| `prepare-experimental.ps1` + `build-experimental.cmd` | import lib from the real runtime's exports, thin build |
+| `Test/` | standalone smoke test (wire path and math) and corpus conformance |
