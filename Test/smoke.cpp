@@ -6,6 +6,7 @@
 #include <winsock2.h>
 #include <cstdio>
 #include <cmath>
+#include <utility>
 #include "../plugin/ogs_publisher.h"
 
 using namespace ogs::telemetry;
@@ -339,6 +340,50 @@ int main()
             std::printf("single failed velocity reads at 68 m/s: peak surge %.2f\n", peak);
             Check("a single failed velocity read causes no surge spike", peak < 0.5f);
         }
+    }
+
+    {
+        const Quat level = RotatorToQuat(0, 0, 0);
+        auto slowMotion = [&](bool passScale, bool hasVel)
+        {
+            ogs::Publisher p;
+            float x = 0.0f, previousScale = 1.0f, peak = 0.0f;
+            int countedFailures = 0;
+            bool stayed = true;
+            for (int i = 0; i < 480; i++)
+            {
+                float scale = 1.0f;
+                if (i >= 120 && i < 156) scale = 1.0f - (i - 119) / 36.0f;
+                else if (i >= 156 && i < 276) scale = 0.0f;
+                else if (i >= 276 && i < 312) scale = (i - 275) / 36.0f;
+                scale = (std::max)(scale, 0.0001f);
+                x += 6800.0f * (float)dt * previousScale;
+                p.tick(dt, true, Vec3{ x, 0, 0 }, level, hasVel, Vec3{ 6800.0f, 0, 0 },
+                       passScale ? scale : 1.0f);
+                previousScale = scale;
+                if (i > 90) peak = (std::max)(peak, std::abs(p.last_specific_force().Z));
+                if (hasVel)
+                {
+                    stayed = stayed && p.using_engine_velocity();
+                    countedFailures = (std::max)(countedFailures, p.velocity_check().failures_in_a_row());
+                }
+            }
+            return std::make_pair(peak, stayed && countedFailures == 0);
+        };
+        const auto ignored = slowMotion(false, false);
+        const auto followed = slowMotion(true, false);
+        std::printf("slow motion to a stop and back at 68 m/s, positions only: peak surge ignoring the time scale %.1f, following it %.1f\n",
+                    ignored.first, followed.first);
+        Check("slow motion: ignoring the time scale reads as braking (the field symptom)", ignored.first > 50.0f);
+        Check("slow motion: following the time scale keeps surge quiet", followed.first < 2.0f);
+        Check("slow motion: the engine velocity passes every check when game time is used",
+              slowMotion(true, true).second);
+        ogs::Publisher odd;
+        for (int i = 0; i < 120; i++)
+            odd.tick(dt, true, Vec3{ i * 100.0f, 0, 0 }, level, false, Vec3{},
+                     i % 2 ? -1.0f : std::nanf(""));
+        Check("slow motion: an unreadable time scale counts as normal speed",
+              std::abs(odd.last_specific_force().Z) < 0.5f);
     }
 
     std::printf("smoke: %d passed, %d failed\n", g_pass, g_fail);

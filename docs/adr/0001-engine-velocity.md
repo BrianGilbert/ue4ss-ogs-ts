@@ -65,7 +65,8 @@ missed read. Differencing a velocity from one source against the other gave a
 The time step stays wall-clock. Game time wouldn't help a game that steps
 physics apart from its frames, and changing one thing at a time shows what the
 velocity reading fixes. A new in-game recording decides whether it needs to
-change.
+change. `0002-game-time-scale.md` replaces this paragraph: movement is timed
+with the game's time dilation.
 
 ## Consequences
 

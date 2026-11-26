@@ -16,6 +16,7 @@
 #include <windows.h>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdarg>
 #include <fstream>
@@ -294,6 +295,66 @@ static bool SamplePawn(ogs::telemetry::Vec3& posCm,
 // below. The hook source may fire many times per frame (ReceiveTick fires per
 // ticking actor), so sampling is cadence-gated to motionHz before any object
 // walk (FindFirstOf iterates the entire object array).
+static bool TryReadFloats(UObject* object, const wchar_t* const* names, int count, float* out)
+{
+    for (int i = 0; i < count; i++)
+    {
+        const float* value = object->GetValuePtrByPropertyNameInChain<float>(names[i]);
+        out[i] = value != nullptr ? *value : -1.0f;
+    }
+    return true;
+}
+
+static bool GuardedReadFloats(UObject* object, const wchar_t* const* names, int count, float* out)
+{
+    __try { return TryReadFloats(object, names, count, out); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+static UObject* FindWorldSettingsBeside(UObject* controller)
+{
+    std::vector<UObject*> all;
+    UObjectGlobals::FindAllOf(STR("WorldSettings"), all);
+    for (UObject* settings : all)
+        if (settings->GetOuterPrivate() == controller->GetOuterPrivate())
+            return settings;
+    return nullptr;
+}
+
+static float ReadTimeScale()
+{
+    static const wchar_t* const names[] = {
+        STR("TimeDilation"), STR("MatineeTimeDilation"), STR("DemoPlayTimeDilation") };
+    static UObject* settingsOwner = nullptr;
+    static UObject* settings = nullptr;
+    static bool slowed = false;
+    if (g_cachedController == nullptr) return 1.0f;
+    if (g_cachedController != settingsOwner)
+    {
+        settingsOwner = g_cachedController;
+        settings = FindWorldSettingsBeside(g_cachedController);
+        DebugLog(settings != nullptr ? "time scale: reading the WorldSettings of the controller's level\n"
+                                     : "time scale: no WorldSettings found, assuming normal speed\n");
+    }
+    if (settings == nullptr) return 1.0f;
+    float values[3]{};
+    if (!GuardedReadFloats(settings, names, 3, values))
+    {
+        settingsOwner = nullptr;
+        settings = nullptr;
+        return 1.0f;
+    }
+    float scale = 1.0f;
+    for (float value : values)
+        if (value >= 0.0f) scale *= value;
+    if ((scale < 0.99f) != slowed)
+    {
+        slowed = !slowed;
+        DebugLog("t=%.3f game time %s\n", g_publisher.stream_time(), slowed ? "slowed" : "back to normal");
+    }
+    return scale;
+}
+
 // Cadence-gated sampling shared by all tick sources. The hook sources may
 // fire many times per frame, so this early-outs on the motionHz interval
 // before any object walk (FindAllOf iterates the entire object array).
@@ -345,7 +406,8 @@ static void SampleAndPublish()
         RC::Output::send<RC::LogLevel::Normal>(
             STR("[ogs] sample #{}: pawn '{}' at ({:.1f}, {:.1f}, {:.1f})\n"),
             samples, pawnName, pos.X, pos.Y, pos.Z);
-    g_publisher.tick(dt, hasPose, pos, quat, hasVel, vel);
+    const float timeScale = hasPose ? ReadTimeScale() : 1.0f;
+    g_publisher.tick(dt, hasPose, pos, quat, hasVel, vel, timeScale);
     if (hasPose)
     {
         static int loggedWindows = 0, loggedFailures = 0;

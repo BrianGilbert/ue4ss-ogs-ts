@@ -160,6 +160,8 @@ which every Blueprint-ticked actor bypasses).
    row. A check where the pawn didn't move at all isn't counted, and one where
    it barely moved isn't counted for up to six in a row.
    `ogs_telemetry_debug.log` records each failure and the source in use.
+   Movement is timed with the game's time dilation, so slow motion, such as a
+   popup that eases the game to a stop, doesn't read as braking.
    Acceleration is low-pass filtered (τ = 0.1 s), teleports
    reset the estimator, and rates come from quaternion deltas — no Euler
    representation-flip artifacts (see GameConn `docs/cueing.md` for the

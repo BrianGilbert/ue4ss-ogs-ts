@@ -119,7 +119,8 @@ public:
     /// publish cadence.
     void tick(double dt, bool hasPose,
               const telemetry::Vec3& posCm, const telemetry::Quat& quat,
-              bool hasVel = false, const telemetry::Vec3& velCm = {});
+              bool hasVel = false, const telemetry::Vec3& velCm = {},
+              float timeScale = 1.0f);
 
     /// Last derived specific force (m/s², C-4 body frame, accelerometer-
     /// style: +9.80665 heave at rest) — diagnostics/smoke-test access.
@@ -149,7 +150,10 @@ private:
     telemetry::WireBuilder wire_;
     telemetry::BodyDynamicsDeriver deriver_;
     bool hadPose_ = false;
+    static constexpr float HeldTimeScale = 0.02f;
+    static constexpr float MaxTimeScale = 20.0f;
     VelocityCheck velocityCheck_;
+    float previousTimeScale_ = 1.0f;
     bool derivingFromEngine_ = false;
     bool paused_ = false, wasPaused_ = false;
     PublisherConfig cfg_;

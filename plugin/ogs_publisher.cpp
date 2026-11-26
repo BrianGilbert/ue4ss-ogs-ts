@@ -152,9 +152,12 @@ void Publisher::stop()
 
 void Publisher::tick(double dt, bool hasPose,
                      const Vec3& posCm, const Quat& quat,
-                     bool hasVel, const Vec3& velCm)
+                     bool hasVel, const Vec3& velCm, float timeScale)
 {
     clock_ += dt;
+    const float movementScale = previousTimeScale_;
+    previousTimeScale_ = timeScale >= 0.0f && timeScale <= MaxTimeScale ? timeScale : 1.0f;
+    const double gameDt = dt * movementScale;
     if (clock_ - lastDiscovery_ >= cfg_.discoverySeconds)
     {
         sendDiscovery();
@@ -179,17 +182,20 @@ void Publisher::tick(double dt, bool hasPose,
                 deriver_ = telemetry::BodyDynamicsDeriver{};
                 velocityCheck_.Restart();
             }
-            bool useEngineVelocity = false;
-            if (hasVel)
-                useEngineVelocity = velocityCheck_.Update(dt, std, vel);
-            else
-                velocityCheck_.Interrupt();
-            if (useEngineVelocity != derivingFromEngine_)
+            if (movementScale > HeldTimeScale)
             {
-                deriver_ = telemetry::BodyDynamicsDeriver{};
-                derivingFromEngine_ = useEngineVelocity;
+                bool useEngineVelocity = false;
+                if (hasVel)
+                    useEngineVelocity = velocityCheck_.Update(gameDt, std, vel);
+                else
+                    velocityCheck_.Interrupt();
+                if (useEngineVelocity != derivingFromEngine_)
+                {
+                    deriver_ = telemetry::BodyDynamicsDeriver{};
+                    derivingFromEngine_ = useEngineVelocity;
+                }
+                deriver_.Sample(gameDt, std, stdQ, useEngineVelocity, vel);
             }
-            deriver_.Sample(dt, std, stdQ, useEngineVelocity, vel);
         }
         // schedule by accumulation: advancing from the previous due time (not
         // the late send time) keeps the long-run rate at motionHz whatever the
