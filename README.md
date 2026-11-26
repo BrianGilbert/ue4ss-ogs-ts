@@ -157,9 +157,10 @@ which every Blueprint-ticked actor bypasses).
    from the pawn pose and the engine's `GetVelocity`. While that reading is
    missing or disagrees with how the pawn moves, velocity comes from position
    deltas, which are noisier. That takes three failed half-second checks in a
-   row. A check where the pawn barely moved isn't counted, for up to six in a
-   row, and `ogs_telemetry_debug.log` records each failure and the source in
-   use. Acceleration is low-pass filtered (τ = 0.1 s), teleports
+   row. A check where the pawn didn't move at all isn't counted, and one where
+   it barely moved isn't counted for up to six in a row.
+   `ogs_telemetry_debug.log` records each failure and the source in use.
+   Acceleration is low-pass filtered (τ = 0.1 s), teleports
    reset the estimator, and rates come from quaternion deltas — no Euler
    representation-flip artifacts (see GameConn `docs/cueing.md` for the
    receiver-side value).
