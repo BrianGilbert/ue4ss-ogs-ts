@@ -356,10 +356,10 @@ static float ReadTimeScale()
 static void SampleAndPublish()
 {
     const auto now = std::chrono::steady_clock::now();
-    if (now - g_lastSample < std::chrono::duration<double>(g_sampleInterval)) return;
-    const double dt = g_lastSample.time_since_epoch().count() == 0
-        ? g_sampleInterval
-        : std::chrono::duration<double>(now - g_lastSample).count();
+    const bool first = g_lastSample.time_since_epoch().count() == 0;
+    const double dt = first ? g_sampleInterval
+                            : std::chrono::duration<double>(now - g_lastSample).count();
+    if (!first && !g_publisher.sample_due(dt)) return;
     g_lastSample = now;
     g_lastTick = now;
     ogs::telemetry::Vec3 pos;

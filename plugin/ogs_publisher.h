@@ -132,6 +132,15 @@ public:
     const VelocityCheck& velocity_check() const { return velocityCheck_; }
     double stream_time() const { return clock_; }
 
+    /// For a host whose hook fires more often than motion is sent, and
+    /// whose sampling is costly: true when it should sample and tick now,
+    /// elapsedSeconds after its previous tick.
+    bool sample_due(double elapsedSeconds) const
+    {
+        const double earliest = (1.0 / cfg_.motionHz) * (1.0 - MotionEarlyShare);
+        return elapsedSeconds >= earliest && clock_ + elapsedSeconds >= lastMotion_ + earliest;
+    }
+
 private:
     static constexpr UINT_PTR INVALID_SOCKET_VALUE = (UINT_PTR)~0;
     void sendDiscovery();
@@ -150,6 +159,7 @@ private:
     telemetry::WireBuilder wire_;
     telemetry::BodyDynamicsDeriver deriver_;
     bool hadPose_ = false;
+    static constexpr double MotionEarlyShare = 0.25;
     static constexpr float HeldTimeScale = 0.02f;
     static constexpr float MaxTimeScale = 20.0f;
     VelocityCheck velocityCheck_;

@@ -386,6 +386,98 @@ int main()
               std::abs(odd.last_specific_force().Z) < 0.5f);
     }
 
+    // ---- cadence: uneven frames near the motion rate are not skipped ----
+    {
+        WSADATA wsa{};
+        WSAStartup(MAKEWORD(2, 2), &wsa);
+        SOCKET in = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        sockaddr_in at{};
+        at.sin_family = AF_INET;
+        at.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        int length = sizeof at;
+        bind(in, (const sockaddr*)&at, sizeof at);
+        getsockname(in, (sockaddr*)&at, &length);
+        u_long nonBlocking = 1;
+        ioctlsocket(in, FIONBIO, &nonBlocking);
+
+        const double cases[][2] = { { 59, 0.002 }, { 59.94, 0.0005 }, { 59.94, 0.002 },
+                                    { 62, 0.002 }, { 144, 0.002 } };
+        double worstShare = 1.0, fastest = 0.0;
+        for (const auto& c : cases)
+        {
+            ogs::Publisher cadence;
+            ogs::PublisherConfig loopback;
+            loopback.group = "127.0.0.1";
+            loopback.port = ntohs(at.sin_port);
+            if (!cadence.start(loopback)) { worstShare = 0.0; break; }
+            const double seconds = 20.0;
+            int motion = 0;
+            double previous = 0.0;
+            unsigned seed = 7;
+            for (int i = 1; i <= (int)(seconds * c[0]); i++)
+            {
+                seed = seed * 1103515245u + 12345u;
+                const double noise = ((seed >> 16) & 0x7fff) / 16383.5 - 1.0;
+                const double t = i / c[0] + c[1] * noise;
+                cadence.tick(t - previous, true, { 0, 0, 0 }, { 0, 0, 0, 1 });
+                previous = t;
+                char datagram[2048];
+                while (recv(in, datagram, sizeof datagram, 0) > 4)
+                    if (datagram[4] == (char)ogs::telemetry::FrameType::Motion) motion++;
+            }
+            cadence.stop();
+            const double achievable = c[0] < 60.0 ? c[0] : 60.0;
+            const double rate = motion / seconds;
+            std::printf("cadence: %.2f fps, jitter %.1f ms -> %.2f Hz\n", c[0], c[1] * 1000, rate);
+            if (rate / achievable < worstShare) worstShare = rate / achievable;
+            if (rate > fastest) fastest = rate;
+        }
+        // a host sampling from a hook that fires in a short burst each frame
+        const double bursts[][2] = { { 60, 0.0008 }, { 62, 0.0005 }, { 66, 0.0005 },
+                                     { 72, 0.0005 }, { 144, 0.0005 } };
+        double worstBurstShare = 1.0, fastestBurst = 0.0;
+        for (const auto& c : bursts)
+        {
+            ogs::Publisher cadence;
+            ogs::PublisherConfig loopback;
+            loopback.group = "127.0.0.1";
+            loopback.port = ntohs(at.sin_port);
+            if (!cadence.start(loopback)) { worstBurstShare = 0.0; break; }
+            const double seconds = 20.0, burstSeconds = 0.0014;
+            const int callsPerBurst = 100;
+            int motion = 0;
+            double previous = 0.0;
+            unsigned seed = 7;
+            for (int frame = 1; frame <= (int)(seconds * c[0]); frame++)
+            {
+                seed = seed * 1103515245u + 12345u;
+                const double noise = ((seed >> 16) & 0x7fff) / 16383.5 - 1.0;
+                for (int call = 0; call < callsPerBurst; call++)
+                {
+                    const double t = frame / c[0] + c[1] * noise +
+                                     burstSeconds * call / (callsPerBurst - 1);
+                    if (previous != 0.0 && !cadence.sample_due(t - previous)) continue;
+                    cadence.tick(t - previous, true, { 0, 0, 0 }, { 0, 0, 0, 1 });
+                    previous = t;
+                    char datagram[2048];
+                    while (recv(in, datagram, sizeof datagram, 0) > 4)
+                        if (datagram[4] == (char)ogs::telemetry::FrameType::Motion) motion++;
+                }
+            }
+            cadence.stop();
+            const double rate = motion / seconds;
+            std::printf("hook bursts: %.0f fps, jitter %.1f ms -> %.2f Hz\n", c[0], c[1] * 1000, rate);
+            if (rate / 60.0 < worstBurstShare) worstBurstShare = rate / 60.0;
+            if (rate > fastestBurst) fastestBurst = rate;
+        }
+        Check("cadence: a host sampling from bursts of hook calls keeps the motion rate",
+              worstBurstShare >= 0.98 && fastestBurst <= 60.1);
+        closesocket(in);
+        WSACleanup();
+        Check("cadence: uneven frames near the motion rate are not skipped",
+              worstShare >= 0.98 && fastest <= 60.1);
+    }
+
     std::printf("smoke: %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }
